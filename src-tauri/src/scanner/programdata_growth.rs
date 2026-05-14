@@ -381,25 +381,22 @@ impl GrowthAnalyzer {
         significant_count: usize,
         fast_count: usize,
     ) -> String {
-        let total_mb = total_growth as f64 / 1024.0 / 1024.0;
+        let size_text = format_size_plain(total_growth);
 
         if significant_count > 0 {
             format!(
-                "⚠️ 发现 {} 个目录显著增长，总计增长 {:.1} MB，建议及时清理",
-                significant_count, total_mb
+                "⚠️ 发现 {} 个目录显著增长，总计增长 {}，建议及时清理",
+                significant_count, size_text
             )
         } else if fast_count > 0 {
             format!(
-                "📊 发现 {} 个目录快速增长，总计增长 {:.1} MB",
-                fast_count, total_mb
+                "📊 发现 {} 个目录快速增长，总计增长 {}",
+                fast_count, size_text
             )
         } else if total_growth > 0 {
-            format!("✅ ProgramData 总计增长 {:.1} MB，属于正常范围", total_mb)
+            format!("✅ ProgramData 总计增长 {}，属于正常范围", size_text)
         } else if total_growth < 0 {
-            format!(
-                "🎉 ProgramData 总计减少 {:.1} MB，空间已释放",
-                total_mb.abs()
-            )
+            format!("🎉 ProgramData 总计减少 {}，空间已释放", size_text)
         } else {
             "✅ ProgramData 大小基本稳定，无明显变化".to_string()
         }
@@ -421,7 +418,21 @@ fn normalize_path(path: &str) -> String {
     path.to_lowercase().replace('\\', "/")
 }
 
-/// 格式化大小变化为人类可读字符串
+/// 格式化大小（无符号），用于摘要/报告，超过 1GB 自动切换为 GB 单位
+fn format_size_plain(bytes: i64) -> String {
+    let abs_bytes = bytes.abs() as f64;
+    if abs_bytes >= 1024.0 * 1024.0 * 1024.0 {
+        format!("{:.2} GB", abs_bytes / 1024.0 / 1024.0 / 1024.0)
+    } else if abs_bytes >= 1024.0 * 1024.0 {
+        format!("{:.1} MB", abs_bytes / 1024.0 / 1024.0)
+    } else if abs_bytes >= 1024.0 {
+        format!("{:.1} KB", abs_bytes / 1024.0)
+    } else {
+        format!("{} B", bytes.abs())
+    }
+}
+
+/// 格式化大小变化为人类可读字符串（带正负号）
 pub fn format_size_diff(diff: i64) -> String {
     let abs_diff = diff.abs() as f64;
     let sign = if diff >= 0 { "+" } else { "-" };

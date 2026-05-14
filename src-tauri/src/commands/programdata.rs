@@ -5,6 +5,12 @@
 use log::info;
 use serde::{Deserialize, Serialize};
 
+/// 标准化路径格式：小写 + 统一正斜杠分隔符
+/// 与 programdata_growth / programdata_snapshot 中的 normalize_path 保持一致
+fn normalize_path(path: &str) -> String {
+    path.to_lowercase().replace('\\', "/")
+}
+
 // ============================================================================
 // 前端通信数据结构
 // ============================================================================
@@ -66,23 +72,24 @@ pub async fn scan_programdata() -> Result<crate::scanner::ProgramDataScanResult,
         result.scan_duration_ms
     );
 
-    // 同步保存快照
+    // 异步保存快照（不阻塞扫描结果返回，快照保存失败不影响扫描）
     let snapshot_entries: Vec<(String, u64)> = result
         .entries
         .iter()
         .map(|e| (e.path.clone(), e.size))
         .collect();
     let total_size = result.total_size;
-
-    let snapshot = SnapshotBuilder::new()
-        .total_size(total_size)
-        .with_first_level_entries(snapshot_entries)
-        .build();
-    if let Err(e) = crate::scanner::save_snapshot(&snapshot) {
-        log::warn!("保存快照失败（不影响扫描结果）: {:?}", e);
-    } else {
-        log::info!("已保存 ProgramData 快照");
-    }
+    tokio::task::spawn_blocking(move || {
+        let snapshot = SnapshotBuilder::new()
+            .total_size(total_size)
+            .with_first_level_entries(snapshot_entries)
+            .build();
+        if let Err(e) = crate::scanner::save_snapshot(&snapshot) {
+            log::warn!("保存快照失败（不影响扫描结果）: {:?}", e);
+        } else {
+            log::info!("已保存 ProgramData 快照");
+        }
+    });
 
     Ok(result)
 }
@@ -96,79 +103,88 @@ pub async fn scan_and_analyze_programdata(
 
     info!("开始扫描并分析 ProgramData");
 
-    let result = tokio::task::spawn_blocking(move || {
-        let scanner = ProgramDataScanner::new();
-        let scan_result = scanner.scan();
+    let (scan_result, batch_result) = {
+        tokio::task::spawn_blocking(move || {
+            let scanner = ProgramDataScanner::new();
+            let scan_result = scanner.scan();
 
-        let engine = RuleEngine::default();
-        let analyze_input: Vec<(String, u64)> = scan_result
-            .entries
-            .iter()
-            .map(|e| (e.path.clone(), e.size))
-            .collect();
-        let batch_result = engine.analyze_batch(&analyze_input);
+            let engine = RuleEngine::default();
+            let analyze_input: Vec<(String, u64)> = scan_result
+                .entries
+                .iter()
+                .map(|e| (e.path.clone(), e.size))
+                .collect();
+            let batch_result = engine.analyze_batch(&analyze_input);
 
-        let cleanable_size: u64 = batch_result
-            .results
-            .iter()
-            .filter(|r| {
-                r.risk == PdRiskLevel::Safe
-                    && matches!(r.action, PdActionType::Delete | PdActionType::Suggest)
-            })
-            .map(|r| r.size)
-            .sum();
-        let warning_size: u64 = batch_result
-            .results
-            .iter()
-            .filter(|r| r.risk == PdRiskLevel::Warning)
-            .map(|r| r.size)
-            .sum();
+            Ok::<_, String>((scan_result, batch_result))
+        })
+        .await
+        .map_err(|e| format!("扫描分析任务执行失败: {}", e))??
+    };
 
-        let response_entries: Vec<ProgramDataAnalyzeEntryResponse> = batch_result
-            .results
-            .into_iter()
-            .map(|r| ProgramDataAnalyzeEntryResponse {
-                path: r.path,
-                size: r.size,
-                category: r.category,
-                risk: r.risk,
-                action: r.action,
-                reason: r.reason,
-                suggestion: r.suggestion,
-                matched_rule_id: r.matched_rule_id,
-                tags: r.tags,
-            })
-            .collect();
-
-        // 同步保存快照
-        let snapshot_entries: Vec<(String, u64)> = scan_result
-            .entries
-            .iter()
-            .map(|e| (e.path.clone(), e.size))
-            .collect();
-        let total_size = scan_result.total_size;
+    // 异步保存快照（不阻塞扫描结果返回）
+    let snapshot_entries: Vec<(String, u64)> = scan_result
+        .entries
+        .iter()
+        .map(|e| (e.path.clone(), e.size))
+        .collect();
+    let total_size = scan_result.total_size;
+    tokio::task::spawn_blocking(move || {
         let snapshot = SnapshotBuilder::new()
             .total_size(total_size)
             .with_first_level_entries(snapshot_entries)
             .build();
         if let Err(e) = crate::scanner::save_snapshot(&snapshot) {
             log::warn!("保存快照失败（不影响扫描结果）: {:?}", e);
+        } else {
+            log::info!("已保存 ProgramData 快照");
         }
+    });
 
-        Ok::<_, String>(ProgramDataScanAndAnalyzeResponse {
-            total_size: scan_result.total_size,
-            total_files_scanned: scan_result.total_files_scanned,
-            scan_duration_ms: scan_result.scan_duration_ms,
-            inaccessible_count: scan_result.inaccessible_count,
-            analyze: ProgramDataAnalyzeResponse {
-                entries: response_entries,
-                cleanable_size,
-                warning_size,
-            },
+    let cleanable_size: u64 = batch_result
+        .results
+        .iter()
+        .filter(|r| {
+            r.risk == PdRiskLevel::Safe
+                && matches!(r.action, PdActionType::Delete | PdActionType::Suggest)
         })
-    })
-    .await
-    .map_err(|e| format!("扫描分析任务执行失败: {}", e))??;
+        .map(|r| r.size)
+        .sum();
+    let warning_size: u64 = batch_result
+        .results
+        .iter()
+        .filter(|r| r.risk == PdRiskLevel::Warning)
+        .map(|r| r.size)
+        .sum();
+
+    let response_entries: Vec<ProgramDataAnalyzeEntryResponse> = batch_result
+        .results
+        .into_iter()
+        .map(|r| ProgramDataAnalyzeEntryResponse {
+            // 路径标准化：与快照/增长对比使用的 normalize_path 保持一致，统一为小写+正斜杠
+            path: normalize_path(&r.path),
+            size: r.size,
+            category: r.category,
+            risk: r.risk,
+            action: r.action,
+            reason: r.reason,
+            suggestion: r.suggestion,
+            matched_rule_id: r.matched_rule_id,
+            tags: r.tags,
+        })
+        .collect();
+
+    let result = ProgramDataScanAndAnalyzeResponse {
+        total_size: scan_result.total_size,
+        total_files_scanned: scan_result.total_files_scanned,
+        scan_duration_ms: scan_result.scan_duration_ms,
+        inaccessible_count: scan_result.inaccessible_count,
+        analyze: ProgramDataAnalyzeResponse {
+            entries: response_entries,
+            cleanable_size,
+            warning_size,
+        },
+    };
 
     info!(
         "ProgramData 扫描分析完成: {} 条目，可清理 {} 字节",
@@ -218,7 +234,7 @@ pub async fn analyze_programdata(
         .results
         .into_iter()
         .map(|r| ProgramDataAnalyzeEntryResponse {
-            path: r.path,
+            path: normalize_path(&r.path),
             size: r.size,
             category: r.category,
             risk: r.risk,
@@ -292,22 +308,23 @@ pub async fn diff_programdata() -> Result<crate::scanner::GrowthReport, String> 
 
             let report = compare_growth_with_timespan(&current, &previous, &time_span);
 
-            // 如果所有条目都被判定为"新增"，说明快照格式不兼容（旧版 strip 前缀 vs 新版全路径）
-            if report.new_count > 0 && report.new_count == report.entries.len() {
+            // 如果所有条目被判定为"新增"，说明快照格式不兼容（旧版 strip 前缀 vs 新版全路径）
+            // 检测方式：previous 中无匹配路径（旧格式快照带 strip 前缀，与新版路径无法对账）
+            // 此时标记为格式迁移并提示，但仍返回当前报告数据让用户了解目录新增情况
+            let all_new = report.new_count > 0
+                && report.entries.len() > 0
+                && report.new_count == report.entries.len();
+            if all_new {
                 log::warn!(
-                    "增长对比：所有 {} 个条目均被判定为新增，返回空报告",
+                    "增长对比：所有 {} 个条目被判定为新增，疑似快照格式变更，已标记提示",
                     report.new_count
                 );
                 return Ok(crate::scanner::GrowthReport {
-                    entries: Vec::new(),
-                    total_growth: 0,
-                    significant_count: 0,
-                    fast_count: 0,
-                    new_count: 0,
-                    decreased_count: 0,
-                    time_span: format!("{} → {}", previous_snapshot.date, current_snapshot.date),
-                    summary: "历史数据格式已更新，本次暂无对比数据。下次扫描后将正常显示增长趋势。"
-                        .to_string(),
+                    summary: format!(
+                        "快照格式已升级（{}），本次展示新增目录，下次扫描后恢复正常增长对比",
+                        report.time_span
+                    ),
+                    ..report
                 });
             }
 

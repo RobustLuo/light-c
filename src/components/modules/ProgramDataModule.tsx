@@ -443,10 +443,11 @@ export function ProgramDataModule() {
   const hasMore = entries.length > 15 && !showAll;
 
   // 构建增长映射（path → growth）
+  // 路径统一标准化为小写+正斜杠，确保与后端快照/growth 格式一致
   const growthMap = new Map<string, ProgramDataGrowthEntry>();
   if (growthReport) {
     for (const g of growthReport.entries) {
-      growthMap.set(g.path.toLowerCase(), g);
+      growthMap.set(g.path.toLowerCase().replace(/\\/g, '/'), g);
     }
   }
 
@@ -538,7 +539,7 @@ export function ProgramDataModule() {
                 <AnalyzeRow
                   key={entry.path}
                   entry={entry}
-                  growth={growthMap.get(entry.path.toLowerCase()) ?? null}
+                  growth={growthMap.get(entry.path.toLowerCase().replace(/\\/g, '/')) ?? null}
                   isCleaning={isCleaning}
                   onClean={handleSingleClean}
                   onOpenFolder={handleOpenFolder}

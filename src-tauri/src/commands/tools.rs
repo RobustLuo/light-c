@@ -32,19 +32,34 @@ pub fn open_disk_cleanup() -> Result<(), String> {
     }
 }
 
-/// 在文件资源管理器中打开文件所在目录
+/// 在文件资源管理器中打开路径
+/// - 如果是目录，直接钻入该目录
+/// - 如果是文件，打开所在目录并选中该文件
 #[tauri::command]
 pub fn open_in_folder(path: String) -> Result<(), String> {
-    info!("打开文件所在目录: {}", path);
+    info!("打开路径: {}", path);
 
     #[cfg(target_os = "windows")]
     {
+        use std::path::Path;
         use std::process::Command;
-        Command::new("explorer")
-            .arg("/select,")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| format!("无法打开文件夹: {}", e))?;
+        // Windows explorer 需要反斜杠路径，正斜杠会导致打开桌面而非目标目录
+        let windows_path = path.replace('/', "\\");
+        let p = Path::new(&windows_path);
+        if p.is_dir() {
+            // 目录：直接打开钻入
+            Command::new("explorer")
+                .arg(&windows_path)
+                .spawn()
+                .map_err(|e| format!("无法打开文件夹: {}", e))?;
+        } else {
+            // 文件：打开所在目录并选中
+            Command::new("explorer")
+                .arg("/select,")
+                .arg(&windows_path)
+                .spawn()
+                .map_err(|e| format!("无法打开文件夹: {}", e))?;
+        }
         Ok(())
     }
 

@@ -4,6 +4,16 @@
 
 ---
 
+## v2.4.2 (2026-05-14)
+
+### ProgramData 分析 — 增长对比显示修复
+
+- **[BUG] 增长列表全部显示 "-" 修复**：分析结果的路径格式（`C:\ProgramData\Microsoft`，Windows 反斜杠）与增长快照的路径格式（`c:/programdata/microsoft`，小写正斜杠）不一致，导致前端 `growthMap` 查找永远失败。修复方案为三层路径标准化——后端命令层统一 `normalize_path()` 后返回、前端构建 `growthMap` 和查询时均做 `toLowerCase() + replace(/\\/g, '/')` 标准化
+- **快照保存异步化**：`scan_and_analyze_programdata` 中快照保存移至独立 `spawn_blocking`，不再阻塞扫描结果返回前端
+- **"全部新增"兼容逻辑优化**：旧格式快照与新格式路径不匹配时，不再返回空列表，改为返回实际条目数据 + 格式升级提示，下次扫描后自动恢复正常
+
+---
+
 ## v2.4.1 (2026-05-03)
 
 ### 系统瘦身 — 严重缺陷修复
