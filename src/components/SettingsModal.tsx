@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Settings, MessageSquare, Info, Sun, Moon, Monitor, ExternalLink, RefreshCw, CheckCircle, BookOpen, Shield, AlertTriangle, Cpu, HardDrive, Monitor as MonitorIcon, User, Clock, Zap, FileBox, MessageCircle, Layers, Package, Database, Code2, FolderOpen, History, ChevronRight, MonitorCog, Coffee, Copy, MousePointerClick, ShieldCheck, Rocket, HelpCircle, ClipboardList, ShieldAlert, Navigation, Trash2, SlidersHorizontal } from 'lucide-react';
+import { Select, type SelectOption } from './ui/Select';
 
 // 赞赏码图片
 import wechatQr from '../assets/r_wechat_qr.jpg';
@@ -405,6 +406,12 @@ function GeneralSettings({ mode, setMode }: { mode: ThemeMode; setMode: (mode: T
 // 功能设置 - 扫描参数配置（独立一级菜单）
 // ============================================================================
 
+const DEPTH_OPTIONS: SelectOption<string>[] = [
+  { value: '2', label: '2 层' },
+  { value: '3', label: '3 层' },
+  { value: '4', label: '4 层' },
+];
+
 function FeatureSettings() {
   const { settings, updateSettings } = useSettings();
 
@@ -417,47 +424,20 @@ function FeatureSettings() {
           大目录分析
         </h4>
         <div className="bg-[var(--bg-main)] rounded-2xl p-5 space-y-6">
-          {/* 分析深度 */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">展示深度</p>
-                <p className="text-xs text-[var(--text-muted)] mt-1">
-                  结果列表中展示的目录层数（实际扫描深度固定为 6 层以确保覆盖率）
-                </p>
-              </div>
-              <span className="text-sm font-semibold text-[var(--brand-green)] min-w-[2rem] text-right">
-                {settings.hotspotDepth} 层
-              </span>
+          {/* 展示深度 — 下拉选择，最大 4 层（实际扫描固定 6 层） */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-[var(--text-primary)]">展示深度</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1">
+                结果列表中展示的目录层数
+              </p>
             </div>
-            <input
-              type="range"
-              min={2}
-              max={5}
-              step={1}
-              value={settings.hotspotDepth}
-              onChange={(e) => updateSettings({ hotspotDepth: Number(e.target.value) })}
-              className="w-full h-2 bg-[var(--bg-card)] rounded-full appearance-none cursor-pointer
-                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5
-                [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--brand-green)]
-                [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:cursor-pointer
-                [&::-webkit-slider-thumb]:hover:scale-110 [&::-webkit-slider-thumb]:transition-transform"
+            <Select
+              value={String(settings.hotspotDepth)}
+              options={DEPTH_OPTIONS}
+              onChange={(v) => updateSettings({ hotspotDepth: Number(v) })}
+              widthClass="w-24"
             />
-            <div className="flex justify-between mt-1.5">
-              {[2, 3, 4].map((n) => (
-                <span
-                  key={n}
-                  className={`text-[10px] cursor-pointer transition-colors ${
-                    settings.hotspotDepth === n
-                      ? 'text-[var(--brand-green)] font-semibold'
-                      : 'text-[var(--text-faint)] hover:text-[var(--text-muted)]'
-                  }`}
-                  onClick={() => updateSettings({ hotspotDepth: n })}
-                >
-                  {n}层
-                </span>
-              ))}
-            </div>
           </div>
 
           {/* 大小阈值 */}
@@ -653,7 +633,7 @@ function GuideSettings() {
             </p>
             <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6 mt-2">
               <span className="text-[var(--brand-green)] font-medium">树形层级展示：</span>结果以递归父子树呈现，渐进缩进 + L&#123;n&#125; 深度标签直观展示目录层级关系。
-              每层最多展开前 <span className="font-medium">3</span> 个最大子目录。展示深度可在<span className="text-[var(--brand-green)] font-medium">功能设置</span>中调节（2-5 层），
+              每层最多展开前 <span className="font-medium">3</span> 个最大子目录。展示深度可在<span className="text-[var(--brand-green)] font-medium">功能设置</span>中调节（2-4 层），
               实际扫描深度固定为 6 层以确保覆盖率。
             </p>
             <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6 mt-2">
@@ -812,27 +792,15 @@ function GuideSettings() {
 
 // 意见反馈 - 微信风格
 const QQ_GROUP = '834582563';
-const WECHAT_ID = 'ZENITH3399';
 
 function FeedbackSettings() {
   const [copiedQQ, setCopiedQQ] = useState(false);
-  const [copiedWechat, setCopiedWechat] = useState(false);
 
   const handleCopyQQ = async () => {
     try {
       await navigator.clipboard.writeText(QQ_GROUP);
       setCopiedQQ(true);
       setTimeout(() => setCopiedQQ(false), 2000);
-    } catch (err) {
-      console.error('复制失败:', err);
-    }
-  };
-
-  const handleCopyWechat = async () => {
-    try {
-      await navigator.clipboard.writeText(WECHAT_ID);
-      setCopiedWechat(true);
-      setTimeout(() => setCopiedWechat(false), 2000);
     } catch (err) {
       console.error('复制失败:', err);
     }
@@ -921,7 +889,7 @@ function FeedbackSettings() {
             </button>
           </div>
           {/* 微信号 */}
-          <div className="flex items-center justify-between pt-3 border-t border-[var(--border-color)]">
+          {/* <div className="flex items-center justify-between pt-3 border-t border-[var(--border-color)]">
             <div className="flex items-center gap-2">
               <span className="text-sm text-[var(--text-secondary)]"> 微 信：</span>
               <span className="text-sm font-medium text-[var(--text-primary)]">{WECHAT_ID}</span>
@@ -939,7 +907,7 @@ function FeedbackSettings() {
                 <><Copy className="w-3 h-3" />复制</>
               )}
             </button>
-          </div>
+          </div> */}
         </div>
       </div>
 

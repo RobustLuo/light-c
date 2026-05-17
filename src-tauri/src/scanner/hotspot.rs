@@ -351,7 +351,7 @@ impl HotspotScanner {
 
     /// 设置最大展示深度（可用于设置面板联动）
     pub fn with_display_depth(mut self, depth: usize) -> Self {
-        self.max_display_depth = depth.clamp(2, 5);
+        self.max_display_depth = depth.clamp(2, 4); // 最大 4 层，超过无实际差异
         self
     }
 

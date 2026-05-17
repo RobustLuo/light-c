@@ -371,7 +371,7 @@ export function SocialCleanModule() {
         }
       >
         {/* 展开内容 */}
-        <div className="max-h-[500px] overflow-auto">
+        <div className="min-h-[300px]">
           {/* 说明提示 */}
           {showTip && (
             <div className="mx-4 mt-4 mb-4 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 flex items-start gap-2 relative">
