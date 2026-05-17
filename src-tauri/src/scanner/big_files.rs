@@ -212,8 +212,19 @@ fn compute_file_risk_level(path: &str) -> u8 {
     if critical_files.contains(&file_name_lower.as_str()) {
         return 5;
     }
-    if ext == "sys" && lower.contains("\\windows\\") {
+    // sys 文件仅锁定核心系统目录（system32/syswow64/drivers），
+    // Temp 等目录下的 .sys 临时文件不锁定
+    if ext == "sys"
+        && (lower.contains("\\system32\\")
+            || lower.contains("\\syswow64\\")
+            || lower.contains("\\drivers\\"))
+    {
         return 5;
+    }
+
+    // Windows 更新缓存可安全清理，必须在规则 4 之前特判
+    if lower.contains("\\windows\\softwaredistribution\\download\\") {
+        return 1;
     }
 
     // 4 — 较高风险
@@ -281,7 +292,7 @@ fn compute_source_label(path: &str) -> String {
     if ["db", "sqlite", "mdf", "ldf", "accdb", "mdb"].contains(&ext) {
         return "数据库文件".to_string();
     }
-    if ["zip", "rar", "7z", "tar", "gz"].contains(&ext) {
+    if ["zip", "rar", "7z", "tar", "gz", "bz2", "xz", "zst", "cab", "tar.gz"].contains(&ext) {
         return "压缩包".to_string();
     }
     if ext == "log" {

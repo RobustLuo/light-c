@@ -179,26 +179,25 @@ export function BigFilesModule() {
         });
       }
 
-      // 从列表中移除成功删除的文件
+      // 从列表中移除成功删除的文件，以返回结果为准重建状态
       if (result.success_count > 0) {
-        const failedPaths = new Set(result.failed_files?.map((f) => f.path) || []);
-        const newFiles = files.filter((file) => !selectedFiles.has(file.path) || failedPaths.has(file.path));
+        const failedPaths = new Set(result.failed_files?.map((f) => f.path) ?? []);
+
+        // 从文件列表中移除成功删除的（选中且不在失败列表中的）
+        const newFiles = files.filter(
+          (file) => !selectedFiles.has(file.path) || failedPaths.has(file.path)
+        );
         setFiles(newFiles);
-        
+
+        // 选中状态只保留实际失败的文件
+        setSelectedFiles(
+          new Set([...failedPaths].filter((p) => selectedFiles.has(p)))
+        );
+
         const newTotalSize = newFiles.reduce((sum, f) => sum + f.size, 0);
         updateModuleState('bigFiles', {
           fileCount: newFiles.length,
           totalSize: newTotalSize,
-        });
-
-        setSelectedFiles((prev) => {
-          const next = new Set(prev);
-          for (const path of prev) {
-            if (!failedPaths.has(path)) {
-              next.delete(path);
-            }
-          }
-          return next;
         });
 
         triggerHealthRefresh();
@@ -219,6 +218,9 @@ export function BigFilesModule() {
   const selectedSize = files
     .filter((f) => selectedFiles.has(f.path))
     .reduce((sum, f) => sum + f.size, 0);
+
+  // 可选中文件数量（risk_level >= 4 被锁定，不可选）
+  const selectableCount = files.filter((f) => f.risk_level <= 3).length;
 
   const isExpanded = expandedModule === 'bigFiles';
   const isScanning = moduleState.status === 'scanning';
@@ -262,7 +264,7 @@ export function BigFilesModule() {
       <ModuleCard
         id="bigFiles"
         title="大文件清理"
-        description="扫描 C 盘体积最大的文件，快速释放存储空间"
+        description="扫描系统盘体积最大的文件，快速释放存储空间"
         icon={<FileBox className="w-6 h-6 text-[var(--brand-green)]" />}
         status={moduleState.status}
         fileCount={moduleState.fileCount}
@@ -288,7 +290,7 @@ export function BigFilesModule() {
                   onClick={toggleSelectAll}
                   className="text-xs text-[var(--fg-muted)] hover:text-emerald-600 transition"
                 >
-                  {selectedFiles.size === files.length ? '取消全选' : '全选'}
+                  {selectedFiles.size === selectableCount && selectableCount > 0 ? '取消全选' : '全选'}
                 </button>
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
@@ -337,7 +339,7 @@ export function BigFilesModule() {
                 <Loader2 className="w-7 h-7 text-emerald-500 animate-spin" />
               </div>
               <p className="text-sm font-medium text-[var(--fg-secondary)]">正在扫描中...</p>
-              <p className="text-xs text-[var(--fg-muted)] mt-1">正在遍历 C 盘文件，请稍候</p>
+              <p className="text-xs text-[var(--fg-muted)] mt-1">正在遍历系统盘文件，请稍候</p>
             </div>
           )}
 
