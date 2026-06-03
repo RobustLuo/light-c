@@ -395,13 +395,11 @@ export function HotspotModule() {
       const result = await scanHotspot(topN, fullScanEnabled, settings.hotspotDepth, settings.hotspotSizeThreshold, settings.hotspotIgnoreSystemDirs);
       setScanResult(result);
 
-      // 计算 Top 10 的总大小作为模块显示
-      const top10Size = result.entries.slice(0, 10).reduce((sum, e) => sum + e.total_size, 0);
-
+      // 卡片摘要：展示的目录数 + 扫描覆盖总大小（与内部统计行一致）
       updateModuleState('hotspot', {
         status: 'done',
         fileCount: result.entries.length,
-        totalSize: top10Size,
+        totalSize: result.scanned_total_size,
       });
     } catch (err) {
       console.error('大目录分析扫描失败:', err);
@@ -518,6 +516,7 @@ export function HotspotModule() {
       status={moduleState.status}
       fileCount={moduleState.fileCount}
       totalSize={moduleState.totalSize}
+      countLabel="个大目录"
       expanded={isExpanded}
       onToggleExpand={() => setExpandedModule(isExpanded ? null : 'hotspot')}
       onScan={handleScan}
@@ -555,35 +554,17 @@ export function HotspotModule() {
             <p className="text-xs mt-1 text-amber-500">⚠ 已关闭系统目录过滤，扫描时间可能较长</p>
           )}
 
-          {/* 深度扫描进度条 */}
+          {/* 深度扫描进度：仅显示当前目录 + 已扫描目录数 */}
           {fullScanEnabled && scanProgress && (
-            <div className="mt-4 w-full max-w-xs space-y-2">
-              {/* 进度百分比 */}
-              <div className="flex items-center justify-between text-xs">
-                <span className="truncate max-w-[200px]" title={scanProgress.current_dir}>
+            <div className="mt-3 w-full max-w-sm bg-[var(--bg-main)] rounded-xl px-4 py-3 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                <span className="shrink-0">正在扫描</span>
+                <span className="truncate text-[var(--text-primary)] font-medium" title={scanProgress.current_dir}>
                   {scanProgress.current_dir}
                 </span>
-                <span className="shrink-0">
-                  {scanProgress.total_first_level_dirs > 0
-                    ? `${Math.round((scanProgress.completed_roots / scanProgress.total_first_level_dirs) * 100)}%`
-                    : ''}
-                </span>
               </div>
-              {/* 进度条 — 轨道使用半透明色确保在深/浅主题下都可见 */}
-              <div className="w-full h-2 bg-[var(--bg-main)] rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-[var(--brand-green)] rounded-full transition-all duration-300"
-                  style={{
-                    width: `${scanProgress.total_first_level_dirs > 0
-                      ? (scanProgress.completed_roots / scanProgress.total_first_level_dirs) * 100
-                      : 0}%`
-                  }}
-                />
-              </div>
-              {/* 统计信息 */}
-              <div className="flex justify-center gap-3 text-[10px] text-[var(--text-faint)]">
-                <span>已扫描 {scanProgress.scanned_dirs} 个目录</span>
-                <span>发现 {scanProgress.found_entries} 个大目录</span>
+              <div className="text-xs text-[var(--text-faint)]">
+                已扫描 <span className="text-[var(--text-primary)] font-medium">{scanProgress.scanned_dirs.toLocaleString()}</span> 个目录
               </div>
             </div>
           )}
@@ -617,9 +598,9 @@ export function HotspotModule() {
           {/* 统计摘要 */}
           <div className="flex items-center justify-between px-1 text-xs text-[var(--text-muted)]">
             <div className="flex items-center gap-4 mt-4">
-              <span>共扫描 <strong className="text-[var(--text-primary)]">{scanResult.total_folders_scanned}</strong> 个文件夹</span>
-              <span>
-                {scanResult.is_full_scan ? 'C 盘' : 'AppData'} 总占用{' '}
+              <span>共 <strong className="text-[var(--text-primary)]">{scanResult.total_folders_scanned.toLocaleString()}</strong> 个文件夹</span>
+              <span title="扫描遍历到的所有文件累计大小；系统保护目录（WinSxS 等）因性能原因跳过，实际磁盘占用更大">
+                覆盖总大小{' '}
                 <strong className="text-[var(--brand-green)]">{formatSize(scanResult.scanned_total_size)}</strong>
               </span>
             </div>

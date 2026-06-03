@@ -27,8 +27,10 @@ export interface ModuleCardProps {
   status: ModuleStatus;
   /** 发现的文件数量 */
   fileCount: number;
-  /** 可清理的总大小 */
+  /** 可清理的总大小（字节） */
   totalSize: number;
+  /** fileCount 的单位标签，默认"个文件"。大目录模块可传"个大目录" */
+  countLabel?: string;
   /** 是否展开 */
   expanded: boolean;
   /** 展开/收起回调 */
@@ -62,6 +64,7 @@ export function ModuleCard({
   status,
   fileCount,
   totalSize,
+  countLabel = '个文件',
   expanded,
   onToggleExpand,
   onScan,
@@ -164,7 +167,7 @@ export function ModuleCard({
           {isDone && fileCount > 0 && (
             <div className="text-right shrink-0 mr-3">
               <p className="text-xl font-bold text-[var(--brand-green)] tabular-nums">{formatSize(totalSize)}</p>
-              <p className="text-[13px] text-[var(--text-muted)] tabular-nums">{fileCount.toLocaleString()} 个文件</p>
+              <p className="text-[13px] text-[var(--text-muted)] tabular-nums">{fileCount.toLocaleString()} {countLabel}</p>
             </div>
           )}
 
@@ -224,7 +227,7 @@ export function ModuleCard({
 
       {/* 展开内容 - 手风琴动画 */}
       <AccordionContent expanded={expanded}>
-        <div className="border-t border-[var(--border-color)]">
+        <div className="border-t border-[var(--border-color)] pb-2">
           {children}
         </div>
       </AccordionContent>
