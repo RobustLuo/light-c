@@ -531,25 +531,26 @@ impl PermanentDeleteEngine {
     }
 
     /// 标记目录为重启后删除
+    ///
+    /// MoveFileExW + MOVEFILE_DELAY_UNTIL_REBOOT 要求目录在其所有内容
+    /// 被删除之后才能被删除。因此标记顺序必须是：最深子目录 → 文件 → 顶层目录。
     fn mark_for_reboot_delete(&self, path: &Path) -> bool {
-        // 遍历目录中的所有文件，逐个标记
         let mut any_marked = false;
 
-        for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
-            if entry.file_type().is_file() {
-                let file_path = entry.path().to_string_lossy().to_string();
-                #[cfg(windows)]
-                if windows_api::mark_for_delete_on_reboot(&file_path).is_ok() {
-                    any_marked = true;
-                }
-            }
-        }
+        // 收集所有条目并按深度从深到浅排序（目录优先于同深度文件）
+        let mut entries: Vec<(usize, std::path::PathBuf, bool)> = WalkDir::new(path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .map(|e| (e.depth(), e.path().to_path_buf(), e.file_type().is_dir()))
+            .collect();
+        entries.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.2.cmp(&a.2)));
 
-        // 最后标记目录本身
-        let path_str = path.to_string_lossy().to_string();
-        #[cfg(windows)]
-        if windows_api::mark_for_delete_on_reboot(&path_str).is_ok() {
-            any_marked = true;
+        for (_depth, entry_path, _is_dir) in &entries {
+            let path_str = entry_path.to_string_lossy().to_string();
+            #[cfg(windows)]
+            if windows_api::mark_for_delete_on_reboot(&path_str).is_ok() {
+                any_marked = true;
+            }
         }
 
         any_marked

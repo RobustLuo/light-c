@@ -213,10 +213,15 @@ pub(crate) mod windows_api {
 
         let flags = SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND;
 
+        // HRESULT 白名单：
+        // S_OK (0) — 清空成功
+        // E_INVALIDARG (0x80070057) — 回收站原本就为空，也视为成功
+        const S_OK: i32 = 0;
+        const E_INVALIDARG: i32 = -2147024809i32;
+
         unsafe {
             let hresult = SHEmptyRecycleBinW(std::ptr::null(), root_ptr, flags);
-            if hresult == 0 {
-                // S_OK
+            if hresult == S_OK || hresult == E_INVALIDARG {
                 Ok(())
             } else {
                 Err(format!("清空回收站失败，HRESULT: 0x{:08X}", hresult as u32))
@@ -465,47 +470,60 @@ impl EnhancedDeleteEngine {
             .iter()
             .partition(|p| p.to_lowercase().contains("\\$recycle.bin"));
 
-        // 对回收站路径，按驱动器分组，每个驱动器调用一次 Shell API
+        // 回收站文件无法逐文件删除——$Recycle.Bin 下的文件受 SYSTEM 权限保护。
+        // 正确方式是调用 Shell API SHEmptyRecycleBinW 一次性清空所有驱动器的回收站。
+        // 传入 NULL 清空全部驱动器，避免逐文件解析盘符的各种路径格式问题。
         if !recycle_paths.is_empty() {
-            let mut drives_seen: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
-            for path in &recycle_paths {
-                // 提取驱动器盘符，如 "C:" from "C:\$Recycle.Bin\..."
-                let drive = if path.len() >= 2 && path.as_bytes()[1] == b':' {
-                    path[..2].to_string()
-                } else {
-                    continue;
-                };
-                drives_seen.insert(drive);
-            }
+            info!(
+                "检测到 {} 个回收站文件，调用 Shell API 清空全部回收站",
+                recycle_paths.len()
+            );
 
-            for drive in &drives_seen {
-                let drive_root = format!("{}:\\", drive);
-                match windows_api::empty_recycle_bin(Some(&drive_root)) {
-                    Ok(_) => {
-                        info!("已通过 Shell API 清空 {} 回收站", drive_root);
-                    }
-                    Err(e) => {
-                        warn!("清空回收站失败 ({}): {}", drive_root, e);
-                    }
-                }
-            }
+            let shell_result = windows_api::empty_recycle_bin(None /* 清空所有驱动器 */);
 
-            // 回收站文件标记为成功（Shell API 已处理）
+            // 清空前先记录文件大小（Shell API 成功后文件即消失）
+            let mut path_sizes: Vec<(&String, u64, u64)> = Vec::new();
             for path in &recycle_paths {
                 let logical_size = self.get_file_size(Path::new(path));
                 let physical_size = self.calculate_physical_size(logical_size);
-                result.success_count += 1;
-                result.freed_logical_size += logical_size;
-                result.freed_physical_size += physical_size;
-                result.file_results.push(FileDeleteResult {
-                    path: (*path).clone(),
-                    success: true,
-                    logical_size,
-                    physical_size,
-                    failure_reason: None,
-                    marked_for_reboot: false,
-                });
+                path_sizes.push((path, logical_size, physical_size));
+            }
+
+            match shell_result {
+                Ok(_) => {
+                    info!("Shell API 清空回收站成功");
+                    for (path, logical_size, physical_size) in &path_sizes {
+                        result.success_count += 1;
+                        result.freed_logical_size += logical_size;
+                        result.freed_physical_size += physical_size;
+                        result.file_results.push(FileDeleteResult {
+                            path: (*path).clone(),
+                            success: true,
+                            logical_size: *logical_size,
+                            physical_size: *physical_size,
+                            failure_reason: None,
+                            marked_for_reboot: false,
+                        });
+                    }
+                }
+                Err(e) => {
+                    warn!("Shell API 清空回收站失败: {}", e);
+                    for (path, logical_size, physical_size) in &path_sizes {
+                        result.failed_count += 1;
+                        result.skipped_size += physical_size;
+                        result.file_results.push(FileDeleteResult {
+                            path: (*path).clone(),
+                            success: false,
+                            logical_size: *logical_size,
+                            physical_size: *physical_size,
+                            failure_reason: Some(DeleteFailureReason::Other(format!(
+                                "清空回收站失败: {}",
+                                e
+                            ))),
+                            marked_for_reboot: false,
+                        });
+                    }
+                }
             }
         }
 
@@ -756,40 +774,21 @@ impl EnhancedDeleteEngine {
         false
     }
 
-    /// 检查是否为系统保护文件
+    /// 检查是否为系统保护文件（使用共享安全常量，与 delete_engine 保持一致）
     fn is_system_protected(&self, path: &Path) -> bool {
+        use super::safety_constants::{PROTECTED_FILES, PROTECTED_PATH_PREFIXES};
+
         let path_str = path.to_string_lossy().to_lowercase();
 
-        // 系统关键路径
-        let protected_prefixes = [
-            "c:\\windows\\system32",
-            "c:\\windows\\syswow64",
-            "c:\\windows\\winsxs",
-            "c:\\program files",
-            "c:\\program files (x86)",
-        ];
-
-        for prefix in &protected_prefixes {
+        for prefix in PROTECTED_PATH_PREFIXES {
             if path_str.starts_with(prefix) {
                 return true;
             }
         }
 
-        // 系统关键文件
-        let protected_files = [
-            "ntoskrnl.exe",
-            "hal.dll",
-            "ntdll.dll",
-            "kernel32.dll",
-            "bootmgr",
-            "pagefile.sys",
-            "hiberfil.sys",
-            "swapfile.sys",
-        ];
-
         if let Some(file_name) = path.file_name() {
             let name = file_name.to_string_lossy().to_lowercase();
-            for protected in &protected_files {
+            for protected in PROTECTED_FILES {
                 if name == *protected {
                     return true;
                 }

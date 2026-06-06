@@ -10,71 +10,10 @@ use std::path::Path;
 use crate::scanner::{DeleteResult, FileInfo};
 
 // ============================================================================
-// 安全保护配置
+// 安全保护配置 — 统一从共享模块引用
 // ============================================================================
 
-/// 绝对禁止删除的路径前缀
-const PROTECTED_PATH_PREFIXES: &[&str] = &[
-    "c:\\windows\\system32",
-    "c:\\windows\\syswow64",
-    "c:\\windows\\winsxs",
-    "c:\\windows\\servicing",
-    "c:\\windows\\assembly",
-    "c:\\windows\\boot",
-    "c:\\windows\\fonts",
-    "c:\\windows\\inf",
-    "c:\\windows\\microsoft.net",
-    "c:\\windows\\security",
-    "c:\\program files",
-    "c:\\program files (x86)",
-    "c:\\users\\default",
-    "c:\\users\\public\\desktop",
-    "c:\\programdata\\microsoft\\windows",
-    "c:\\programdata\\microsoft\\windows defender",
-    "c:\\recovery",
-    "c:\\$recycle.bin", // 回收站根目录
-];
-
-/// 绝对禁止删除的文件名
-const PROTECTED_FILES: &[&str] = &[
-    // Windows 核心系统文件
-    "ntoskrnl.exe",
-    "hal.dll",
-    "ntdll.dll",
-    "kernel32.dll",
-    "kernelbase.dll",
-    "user32.dll",
-    "gdi32.dll",
-    "advapi32.dll",
-    "shell32.dll",
-    "ole32.dll",
-    "bootmgr",
-    "bcd",
-    "ntldr",
-    "boot.ini",
-    "pagefile.sys",
-    "hiberfil.sys",
-    "swapfile.sys",
-    "desktop.ini", // 保护文件夹配置
-    "ntuser.dat",  // 用户配置
-    "usrclass.dat",
-    // 社交软件配置文件（防止误删导致数据丢失）
-    "config.data",  // 微信配置
-    "accinfo.dat",  // 微信账号信息
-    "msg.db",       // 消息数据库
-    "micromsg.db",  // 微信消息数据库
-    "contact.db",   // 联系人数据库
-    "emotion.db",   // 表情数据库
-    "favorite.db",  // 收藏数据库
-    "publicmsg.db", // 公众号消息
-    "nt_db",        // NTQQ 数据库目录标识
-    "nt_config",    // NTQQ 配置目录标识
-];
-
-/// 在Windows目录下禁止删除的扩展名
-const PROTECTED_EXTENSIONS_IN_WINDOWS: &[&str] = &[
-    "sys", "dll", "exe", "drv", "ocx", "cpl", "msi", "msp", "msu", "cat", "mum", "manifest",
-];
+use super::safety_constants::{PROTECTED_EXTENSIONS_IN_WINDOWS, PROTECTED_FILES, PROTECTED_PATH_PREFIXES};
 
 /// 删除引擎
 pub struct DeleteEngine {
