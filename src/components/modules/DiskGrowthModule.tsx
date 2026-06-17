@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -29,10 +30,13 @@ import { useSettings } from '../../contexts';
 import {
   checkAdminPrivilege,
   cancelDiskGrowthScan,
+  getDiskGrowthDirectoryDetails,
   getDiskGrowthFileDetails,
   openInFolder,
   scanDiskGrowth,
   type DiskGrowthAnalyzeEntry,
+  type DiskGrowthDetailEntry,
+  type DiskGrowthDirectoryDetailsResponse,
   type DiskGrowthEntry,
   type DiskGrowthFileDetailEntry,
   type DiskGrowthFileDetailsResponse,
@@ -369,12 +373,27 @@ function DiskGrowthDetailsModal({
   onClose: () => void;
   onOpenFolder: (path: string) => void;
 }) {
+  const [visible, setVisible] = useState(false);
   const [currentEntry, setCurrentEntry] = useState<DiskGrowthEntry | null>(entry);
   const [fileDetails, setFileDetails] = useState<DiskGrowthFileDetailsResponse | null>(null);
+  const [directoryDetails, setDirectoryDetails] = useState<DiskGrowthDirectoryDetailsResponse | null>(null);
+  const [fileRows, setFileRows] = useState<DiskGrowthFileDetailEntry[]>([]);
+  const [directoryRows, setDirectoryRows] = useState<DiskGrowthDetailEntry[]>([]);
   const [fileLoading, setFileLoading] = useState(false);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const fileScrollRef = useRef<HTMLDivElement | null>(null);
+  const directoryScrollRef = useRef<HTMLDivElement | null>(null);
   const rootPath = entry?.path ?? '';
   const currentPath = currentEntry?.path ?? rootPath;
+  const detailPageSize = 200;
+
+  useEffect(() => {
+    // 首帧先保持隐藏，下一帧再切到可见，确保浏览器能触发真实的入场过渡。
+    const animationFrame = window.requestAnimationFrame(() => setVisible(true));
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, []);
 
   useEffect(() => {
     setCurrentEntry(entry);
@@ -385,13 +404,21 @@ function DiskGrowthDetailsModal({
 
     let cancelled = false;
     setFileDetails(null);
+    setDirectoryDetails(null);
+    setFileRows([]);
+    setDirectoryRows([]);
     setFileError(null);
+    setDirectoryError(null);
     setFileLoading(true);
+    setDirectoryLoading(true);
 
     // 文件级明细按需懒加载，避免主扫描结果一次性携带几十万文件记录。
-    getDiskGrowthFileDetails(currentEntry.path, 200)
+    getDiskGrowthFileDetails(currentEntry.path, 0, detailPageSize)
       .then((result) => {
-        if (!cancelled) setFileDetails(result);
+        if (!cancelled) {
+          setFileDetails(result);
+          setFileRows(result.entries);
+        }
       })
       .catch((err) => {
         if (!cancelled) setFileError(String(err));
@@ -400,15 +427,42 @@ function DiskGrowthDetailsModal({
         if (!cancelled) setFileLoading(false);
       });
 
+    // 目录明细也按当前目录懒加载，避免主结果只带少量 details 时无法继续分页。
+    getDiskGrowthDirectoryDetails(currentEntry.path, 0, detailPageSize)
+      .then((result) => {
+        if (!cancelled) {
+          setDirectoryDetails(result);
+          setDirectoryRows(result.entries);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setDirectoryError(String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setDirectoryLoading(false);
+      });
+
     return () => {
       cancelled = true;
     };
   }, [currentEntry]);
 
+  const fileVirtualizer = useVirtualizer({
+    count: fileRows.length,
+    getScrollElement: () => fileScrollRef.current,
+    estimateSize: () => 58,
+    overscan: 8,
+  });
+  const directoryVirtualizer = useVirtualizer({
+    count: directoryRows.length,
+    getScrollElement: () => directoryScrollRef.current,
+    estimateSize: () => 58,
+    overscan: 8,
+  });
+
   if (!entry || !currentEntry) return null;
 
   const style = getGrowthStyle(currentEntry.level);
-  const details = currentEntry.details ?? [];
   const rootNormalized = normalizeDiskPath(rootPath);
   const currentNormalized = normalizeDiskPath(currentPath);
   const relativeParts = currentNormalized.startsWith(rootNormalized)
@@ -426,52 +480,50 @@ function DiskGrowthDetailsModal({
     })),
   ];
   const handleEnterDirectory = (path: string) => {
-    const childEntry = buildChildGrowthEntry(currentEntry, path);
+    const childEntry = buildChildGrowthEntry(
+      { ...currentEntry, details: directoryRows.length > 0 ? directoryRows : currentEntry.details },
+      path
+    );
     if (childEntry) setCurrentEntry(childEntry);
   };
-  const renderFileRows = (files: DiskGrowthFileDetailEntry[]) =>
-    files.map((file) => {
-      const fileStyle = getGrowthStyle(file.level);
-      return (
-        <div
-          key={file.path}
-          className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg-hover)] transition-colors"
-        >
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] text-[var(--text-primary)] truncate" title={file.path}>
-              {file.name}
-            </p>
-            <p className="text-[11px] text-[var(--text-faint)] truncate" title={file.path}>
-              {file.path}
-            </p>
-          </div>
-          <span className="w-20 text-right text-[13px] font-medium text-[var(--text-primary)] tabular-nums">
-            {formatSize(file.new_size)}
-          </span>
-          <span className={`w-24 text-right text-[13px] font-medium tabular-nums ${fileStyle.color}`}>
-            {formatDiff(file.diff)}
-          </span>
-          <button
-            onClick={() => onOpenFolder(file.path)}
-            className="w-10 flex justify-end p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--brand-green-10)] hover:text-[var(--brand-green)] transition"
-            title="打开所在位置"
-          >
-            <FolderOpen className="w-4 h-4" />
-          </button>
-        </div>
-      );
-    });
+  const loadMoreFiles = async () => {
+    if (!currentEntry || fileLoading || !fileDetails?.has_more) return;
+    setFileLoading(true);
+    try {
+      const result = await getDiskGrowthFileDetails(currentEntry.path, fileRows.length, detailPageSize);
+      setFileDetails(result);
+      setFileRows((rows) => [...rows, ...result.entries]);
+    } catch (err) {
+      setFileError(String(err));
+    } finally {
+      setFileLoading(false);
+    }
+  };
+  const loadMoreDirectories = async () => {
+    if (!currentEntry || directoryLoading || !directoryDetails?.has_more) return;
+    setDirectoryLoading(true);
+    try {
+      const result = await getDiskGrowthDirectoryDetails(currentEntry.path, directoryRows.length, detailPageSize);
+      setDirectoryDetails(result);
+      setDirectoryRows((rows) => [...rows, ...result.entries]);
+    } catch (err) {
+      setDirectoryError(String(err));
+    } finally {
+      setDirectoryLoading(false);
+    }
+  };
+  const modalVisible = visible && !closing;
 
   return (
     <div
       className={`fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm transition-opacity duration-150 ${
-        closing ? 'opacity-0' : 'opacity-100'
+        modalVisible ? 'opacity-100' : 'opacity-0'
       }`}
       onClick={onClose}
     >
       <div
-        className={`w-[720px] max-w-[calc(100vw-32px)] max-h-[84vh] rounded-2xl bg-[var(--bg-card)] shadow-2xl border border-[var(--border-color)] overflow-hidden transition-all duration-150 ${
-          closing ? 'opacity-0 scale-95 translate-y-2' : 'opacity-100 scale-100 translate-y-0'
+        className={`w-[1040px] max-w-[calc(100vw-32px)] h-[90vh] max-h-[calc(100vh-32px)] rounded-2xl bg-[var(--bg-card)] shadow-2xl border border-[var(--border-color)] overflow-hidden transition-all duration-200 flex flex-col ${
+          modalVisible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-2'
         }`}
         onClick={(event) => event.stopPropagation()}
       >
@@ -508,8 +560,8 @@ function DiskGrowthDetailsModal({
           </button>
         </div>
 
-        <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(84vh-72px)]">
-          <div className="grid grid-cols-3 gap-3">
+        <div className="p-5 space-y-4 overflow-hidden flex-1 min-h-0 flex flex-col">
+          <div className="grid grid-cols-3 gap-3 shrink-0">
             <div className="rounded-xl bg-[var(--bg-main)] px-3 py-2">
               <p className="text-[11px] text-[var(--text-muted)]">上次大小</p>
               <p className="mt-1 text-sm font-semibold text-[var(--text-primary)] tabular-nums">
@@ -530,91 +582,134 @@ function DiskGrowthDetailsModal({
             </div>
           </div>
 
-          <div className="rounded-xl bg-[var(--bg-main)] border border-[var(--border-color)] overflow-hidden">
-            <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--border-color)] text-[11px] text-[var(--text-faint)]">
-              <span className="flex-1">文件变化</span>
-              <span className="w-20 text-right">当前大小</span>
-              <span className="w-24 text-right">变化量</span>
-              <span className="w-10" />
-            </div>
-            {fileLoading ? (
-              <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-[var(--text-muted)]">
-                <Loader2 className="w-4 h-4 animate-spin text-[var(--brand-green)]" />
-                正在加载文件级变化明细...
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 min-h-0">
+            <div className="rounded-xl bg-[var(--bg-main)] border border-[var(--border-color)] overflow-hidden min-w-0 min-h-0 flex flex-col">
+              <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--border-color)] text-[11px] text-[var(--text-faint)] shrink-0">
+                <span className="flex-1">子目录</span>
+                <span className="w-20 text-right">当前大小</span>
+                <span className="w-24 text-right">变化量</span>
+                <span className="w-16" />
               </div>
-            ) : fileError ? (
-              <div className="px-4 py-8 text-center">
-                <p className="text-sm text-[var(--text-muted)]">暂时无法查看文件级明细</p>
-                <p className="mt-1 text-xs text-[var(--text-faint)]">{fileError}</p>
-              </div>
-            ) : fileDetails && fileDetails.entries.length > 0 ? (
-              <>
-                {renderFileRows(fileDetails.entries)}
-                {fileDetails.total_changed_files > fileDetails.returned_files && (
-                  <div className="px-4 py-2 text-center text-[11px] text-[var(--text-faint)] border-t border-[var(--border-color)]">
-                    已展示变化最大的 {fileDetails.returned_files} 个文件，共 {fileDetails.total_changed_files} 个文件发生变化
+              <div ref={directoryScrollRef} className="flex-1 min-h-0 overflow-auto">
+                {directoryError ? (
+                  <div className="px-4 py-8 text-center text-sm text-[var(--text-muted)]">{directoryError}</div>
+                ) : directoryRows.length > 0 ? (
+                  <div style={{ height: `${directoryVirtualizer.getTotalSize()}px`, position: 'relative' }}>
+                    {directoryVirtualizer.getVirtualItems().map((virtualItem) => {
+                      const detail = directoryRows[virtualItem.index];
+                      if (!detail) return null;
+                      const detailStyle = getGrowthStyle(detail.level);
+                      return (
+                        <div
+                          key={detail.path}
+                          className="absolute left-0 top-0 w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg-hover)] transition-colors"
+                          style={{ transform: `translateY(${virtualItem.start}px)`, height: `${virtualItem.size}px` }}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] text-[var(--text-primary)] truncate" title={detail.path}>{detail.name}</p>
+                            <p className="text-[11px] text-[var(--text-faint)] truncate" title={detail.path}>{detail.path}</p>
+                          </div>
+                          <span className="w-20 text-right text-[13px] font-medium text-[var(--text-primary)] tabular-nums">{formatSize(detail.new_size)}</span>
+                          <span className={`w-24 text-right text-[13px] font-medium tabular-nums ${detailStyle.color}`}>{formatDiff(detail.diff)}</span>
+                          <div className="w-16 flex justify-end gap-0.5">
+                            <button onClick={() => onOpenFolder(detail.path)} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--brand-green-10)] hover:text-[var(--brand-green)] transition" title="打开目录">
+                              <FolderOpen className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleEnterDirectory(detail.path)} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--brand-green-10)] hover:text-[var(--brand-green)] transition" title="进入目录查看文件变化">
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
+                ) : directoryLoading ? (
+                  <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-[var(--text-muted)]">
+                    <Loader2 className="w-4 h-4 animate-spin text-[var(--brand-green)]" />
+                    正在加载目录变化...
+                  </div>
+                ) : (
+                  <div className="px-4 py-8 text-center text-sm text-[var(--text-muted)]">暂无下一级变化明细</div>
                 )}
-              </>
-            ) : (
-              <div className="px-4 py-8 text-center">
-                <p className="text-sm text-[var(--text-muted)]">暂无文件级变化明细</p>
-                <p className="mt-1 text-xs text-[var(--text-faint)]">可能是最近快照尚未包含文件级数据，或变化集中在更深层目录聚合中。</p>
               </div>
-            )}
-          </div>
-
-          <div className="rounded-xl bg-[var(--bg-main)] border border-[var(--border-color)] overflow-hidden">
-            <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--border-color)] text-[11px] text-[var(--text-faint)]">
-              <span className="flex-1">子目录</span>
-              <span className="w-20 text-right">当前大小</span>
-              <span className="w-24 text-right">变化量</span>
-              <span className="w-10" />
-            </div>
-            {details.length > 0 ? (
-              details.map((detail) => {
-                const detailStyle = getGrowthStyle(detail.level);
-                return (
-                  <div
-                    key={detail.path}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg-hover)] transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[13px] text-[var(--text-primary)] truncate" title={detail.path}>
-                        {detail.name}
-                      </p>
-                      <p className="text-[11px] text-[var(--text-faint)] truncate" title={detail.path}>
-                        {detail.path}
-                      </p>
-                    </div>
-                    <span className="w-20 text-right text-[13px] font-medium text-[var(--text-primary)] tabular-nums">
-                      {formatSize(detail.new_size)}
-                    </span>
-                    <span className={`w-24 text-right text-[13px] font-medium tabular-nums ${detailStyle.color}`}>
-                      {formatDiff(detail.diff)}
-                    </span>
-                    <button
-                      onClick={() => handleEnterDirectory(detail.path)}
-                      className="w-10 flex justify-end p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--brand-green-10)] hover:text-[var(--brand-green)] transition"
-                      title="进入目录查看文件变化"
-                    >
-                      <ChevronRight className="w-4 h-4" />
+              {directoryDetails && (
+                <div className="flex items-center justify-between gap-3 border-t border-[var(--border-color)] px-4 py-2 text-xs text-[var(--text-faint)] shrink-0">
+                  <span>已显示 {directoryRows.length} / {directoryDetails.total_changed_dirs}</span>
+                  {directoryDetails.has_more ? (
+                    <button onClick={loadMoreDirectories} disabled={directoryLoading} className="text-[var(--brand-green)] hover:text-[var(--brand-green-hover)] disabled:opacity-60 transition-colors">
+                      {directoryLoading ? '加载中...' : '加载更多目录'}
                     </button>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="px-4 py-8 text-center">
-                <p className="text-sm text-[var(--text-muted)]">暂无下一级变化明细</p>
-                <p className="mt-1 text-xs text-[var(--text-faint)]">
-                  当前快照只保存目录聚合数据；文件级新增明细需要从后续版本开始额外记录文件快照。
-                </p>
+                  ) : (
+                    <span>已全部加载</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl bg-[var(--bg-main)] border border-[var(--border-color)] overflow-hidden min-w-0 min-h-0 flex flex-col">
+              <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--border-color)] text-[11px] text-[var(--text-faint)] shrink-0">
+                <span className="flex-1">文件变化</span>
+                <span className="w-20 text-right">当前大小</span>
+                <span className="w-24 text-right">变化量</span>
+                <span className="w-10" />
               </div>
-            )}
+              <div ref={fileScrollRef} className="flex-1 min-h-0 overflow-auto">
+                {fileError ? (
+                  <div className="px-4 py-8 text-center">
+                    <p className="text-sm text-[var(--text-muted)]">暂时无法查看文件级明细</p>
+                    <p className="mt-1 text-xs text-[var(--text-faint)]">{fileError}</p>
+                  </div>
+                ) : fileRows.length > 0 ? (
+                  <div style={{ height: `${fileVirtualizer.getTotalSize()}px`, position: 'relative' }}>
+                    {fileVirtualizer.getVirtualItems().map((virtualItem) => {
+                      const file = fileRows[virtualItem.index];
+                      if (!file) return null;
+                      const fileStyle = getGrowthStyle(file.level);
+                      return (
+                        <div
+                          key={file.path}
+                          className="absolute left-0 top-0 w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg-hover)] transition-colors"
+                          style={{ transform: `translateY(${virtualItem.start}px)`, height: `${virtualItem.size}px` }}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] text-[var(--text-primary)] truncate" title={file.path}>{file.name}</p>
+                            <p className="text-[11px] text-[var(--text-faint)] truncate" title={file.path}>{file.path}</p>
+                          </div>
+                          <span className="w-20 text-right text-[13px] font-medium text-[var(--text-primary)] tabular-nums">{formatSize(file.new_size)}</span>
+                          <span className={`w-24 text-right text-[13px] font-medium tabular-nums ${fileStyle.color}`}>{formatDiff(file.diff)}</span>
+                          <button onClick={() => onOpenFolder(file.path)} className="w-10 flex justify-end p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--brand-green-10)] hover:text-[var(--brand-green)] transition" title="打开所在位置">
+                            <FolderOpen className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : fileLoading ? (
+                  <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-[var(--text-muted)]">
+                    <Loader2 className="w-4 h-4 animate-spin text-[var(--brand-green)]" />
+                    正在加载文件变化...
+                  </div>
+                ) : (
+                  <div className="px-4 py-8 text-center text-sm text-[var(--text-muted)]">暂无文件级变化明细</div>
+                )}
+              </div>
+              {fileDetails && (
+                <div className="flex items-center justify-between gap-3 border-t border-[var(--border-color)] px-4 py-2 text-xs text-[var(--text-faint)] shrink-0">
+                  <span>已显示 {fileRows.length} / {fileDetails.total_changed_files}</span>
+                  {fileDetails.has_more ? (
+                    <button onClick={loadMoreFiles} disabled={fileLoading} className="text-[var(--brand-green)] hover:text-[var(--brand-green-hover)] disabled:opacity-60 transition-colors">
+                      {fileLoading ? '加载中...' : '加载更多文件'}
+                    </button>
+                  ) : (
+                    <span>已全部加载</span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          <p className="text-[11px] text-[var(--text-faint)]">
-            说明：文件级明细按需加载，只展示变化最大的前 200 项；目录和文件变化仅用于定位来源，不代表可以直接删除。
+          <p className="text-[11px] text-[var(--text-faint)] shrink-0">
+            说明：目录与文件变化均按需加载，每次最多加载 {detailPageSize} 条；变化明细仅用于定位来源，不代表可以直接删除。
           </p>
         </div>
       </div>

@@ -22,8 +22,8 @@ const DEFAULT_MAX_CHANGE_ENTRIES: usize = 300;
 const MIN_CHANGE_ENTRIES: usize = 50;
 const MAX_CHANGE_ENTRIES: usize = 1000;
 const MAX_DETAIL_ENTRIES: usize = 50;
-const DEFAULT_MAX_FILE_DETAIL_ENTRIES: usize = 200;
-const MAX_FILE_DETAIL_ENTRIES: usize = 1000;
+const DEFAULT_DETAIL_PAGE_SIZE: usize = 200;
+const MAX_DETAIL_PAGE_SIZE: usize = 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -123,6 +123,20 @@ pub struct DiskGrowthFileDetailsResponse {
     pub entries: Vec<DiskGrowthFileDetailEntry>,
     pub total_changed_files: usize,
     pub returned_files: usize,
+    pub offset: usize,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskGrowthDirectoryDetailsResponse {
+    pub path: String,
+    pub previous_scan_time: String,
+    pub current_scan_time: String,
+    pub entries: Vec<DiskGrowthDetailEntry>,
+    pub total_changed_dirs: usize,
+    pub returned_dirs: usize,
+    pub offset: usize,
+    pub has_more: bool,
 }
 
 pub fn scan_and_analyze_system_drive_with_progress<F>(
@@ -178,7 +192,8 @@ where
 
 pub fn get_file_change_details(
     path: String,
-    max_entries: Option<usize>,
+    offset: Option<usize>,
+    limit: Option<usize>,
 ) -> Result<DiskGrowthFileDetailsResponse, String> {
     let manager = DiskSnapshotManager::new()?;
     let Some((previous, current)) = manager.load_latest_two_snapshots()? else {
@@ -190,9 +205,8 @@ pub fn get_file_change_details(
     }
 
     let normalized_path = normalize_query_path(&path);
-    let max_entries = max_entries
-        .unwrap_or(DEFAULT_MAX_FILE_DETAIL_ENTRIES)
-        .clamp(1, MAX_FILE_DETAIL_ENTRIES);
+    let offset = offset.unwrap_or(0);
+    let limit = limit.unwrap_or(DEFAULT_DETAIL_PAGE_SIZE).clamp(1, MAX_DETAIL_PAGE_SIZE);
     let previous_map = file_snapshot_map(&previous.file_entries, &normalized_path);
     let current_map = file_snapshot_map(&current.file_entries, &normalized_path);
     let mut all_paths: HashSet<String> = previous_map.keys().cloned().collect();
@@ -227,15 +241,52 @@ pub fn get_file_change_details(
             .then_with(|| left.path.cmp(&right.path))
     });
     let total_changed_files = entries.len();
-    entries.truncate(max_entries);
+    let paged_entries: Vec<DiskGrowthFileDetailEntry> =
+        entries.into_iter().skip(offset).take(limit).collect();
+    let returned_files = paged_entries.len();
 
     Ok(DiskGrowthFileDetailsResponse {
         path: normalized_path,
         previous_scan_time: previous.date,
         current_scan_time: current.date,
-        returned_files: entries.len(),
+        returned_files,
         total_changed_files,
-        entries,
+        has_more: offset + returned_files < total_changed_files,
+        offset,
+        entries: paged_entries,
+    })
+}
+
+pub fn get_directory_change_details(
+    path: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<DiskGrowthDirectoryDetailsResponse, String> {
+    let manager = DiskSnapshotManager::new()?;
+    let Some((previous, current)) = manager.load_latest_two_snapshots()? else {
+        return Err("至少完成两次 C 盘全盘扫描后，才能查看目录变化明细".to_string());
+    };
+
+    let normalized_path = normalize_query_path(&path);
+    let offset = offset.unwrap_or(0);
+    let limit = limit.unwrap_or(DEFAULT_DETAIL_PAGE_SIZE).clamp(1, MAX_DETAIL_PAGE_SIZE);
+    let previous_children = direct_child_map(&previous.entries);
+    let current_children = direct_child_map(&current.entries);
+    let details = build_detail_entries_unlimited(&normalized_path, &previous_children, &current_children);
+    let total_changed_dirs = details.len();
+    let paged_entries: Vec<DiskGrowthDetailEntry> =
+        details.into_iter().skip(offset).take(limit).collect();
+    let returned_dirs = paged_entries.len();
+
+    Ok(DiskGrowthDirectoryDetailsResponse {
+        path: normalized_path,
+        previous_scan_time: previous.date,
+        current_scan_time: current.date,
+        returned_dirs,
+        total_changed_dirs,
+        has_more: offset + returned_dirs < total_changed_dirs,
+        offset,
+        entries: paged_entries,
     })
 }
 
@@ -391,6 +442,16 @@ fn build_detail_entries(
     previous_children: &HashMap<String, HashMap<String, u64>>,
     current_children: &HashMap<String, HashMap<String, u64>>,
 ) -> Vec<DiskGrowthDetailEntry> {
+    let mut details = build_detail_entries_unlimited(parent, previous_children, current_children);
+    details.truncate(MAX_DETAIL_ENTRIES);
+    details
+}
+
+fn build_detail_entries_unlimited(
+    parent: &str,
+    previous_children: &HashMap<String, HashMap<String, u64>>,
+    current_children: &HashMap<String, HashMap<String, u64>>,
+) -> Vec<DiskGrowthDetailEntry> {
     let previous = previous_children.get(parent);
     let current = current_children.get(parent);
     let mut all_paths = HashSet::new();
@@ -430,7 +491,6 @@ fn build_detail_entries(
             .cmp(&left.diff.abs())
             .then_with(|| left.path.cmp(&right.path))
     });
-    details.truncate(MAX_DETAIL_ENTRIES);
     details
 }
 

@@ -16,13 +16,27 @@ pub fn cancel_disk_growth_scan() {
 #[tauri::command]
 pub async fn get_disk_growth_file_details(
     path: String,
-    max_entries: Option<usize>,
+    offset: Option<usize>,
+    limit: Option<usize>,
 ) -> Result<crate::disk_growth::DiskGrowthFileDetailsResponse, String> {
     tokio::task::spawn_blocking(move || {
-        crate::disk_growth::get_file_change_details(path, max_entries)
+        crate::disk_growth::get_file_change_details(path, offset, limit)
     })
     .await
     .map_err(|error| format!("读取文件级变化明细失败: {}", error))?
+}
+
+#[tauri::command]
+pub async fn get_disk_growth_directory_details(
+    path: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<crate::disk_growth::DiskGrowthDirectoryDetailsResponse, String> {
+    tokio::task::spawn_blocking(move || {
+        crate::disk_growth::get_directory_change_details(path, offset, limit)
+    })
+    .await
+    .map_err(|error| format!("读取目录级变化明细失败: {}", error))?
 }
 
 #[tauri::command]

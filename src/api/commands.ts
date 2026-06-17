@@ -986,6 +986,29 @@ export interface DiskGrowthFileDetailsResponse {
   total_changed_files: number;
   /** 本次返回文件数量 */
   returned_files: number;
+  /** 分页偏移 */
+  offset: number;
+  /** 是否还有更多文件 */
+  has_more: boolean;
+}
+
+export interface DiskGrowthDirectoryDetailsResponse {
+  /** 查询目录 */
+  path: string;
+  /** 上次扫描时间 */
+  previous_scan_time: string;
+  /** 本次扫描时间 */
+  current_scan_time: string;
+  /** 目录级变化明细 */
+  entries: DiskGrowthDetailEntry[];
+  /** 实际变化目录数量 */
+  total_changed_dirs: number;
+  /** 本次返回目录数量 */
+  returned_dirs: number;
+  /** 分页偏移 */
+  offset: number;
+  /** 是否还有更多目录 */
+  has_more: boolean;
 }
 
 export interface DiskGrowthEntry {
@@ -1129,9 +1152,18 @@ export async function cancelDiskGrowthScan(): Promise<void> {
 
 export async function getDiskGrowthFileDetails(
   path: string,
-  maxEntries?: number
+  offset?: number,
+  limit?: number
 ): Promise<DiskGrowthFileDetailsResponse> {
-  return invoke<DiskGrowthFileDetailsResponse>('get_disk_growth_file_details', { path, maxEntries });
+  return invoke<DiskGrowthFileDetailsResponse>('get_disk_growth_file_details', { path, offset, limit });
+}
+
+export async function getDiskGrowthDirectoryDetails(
+  path: string,
+  offset?: number,
+  limit?: number
+): Promise<DiskGrowthDirectoryDetailsResponse> {
+  return invoke<DiskGrowthDirectoryDetailsResponse>('get_disk_growth_directory_details', { path, offset, limit });
 }
 
 // ============================================================================
