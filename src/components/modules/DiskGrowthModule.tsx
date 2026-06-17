@@ -138,46 +138,51 @@ function SummaryCards({
   growthReport: DiskGrowthReport;
 }) {
   const totalGrowth = growthReport.total_growth;
+  const indexedSizeText = formatSize(scanSummary.total_size);
+  const totalGrowthText = totalGrowth === 0 ? '暂无变化' : formatDiff(totalGrowth);
+  const previousScanText = formatPreviousScanTime(scanSummary);
+  const scannedFileCountText = scanSummary.total_files_scanned.toLocaleString();
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <div className="bg-[var(--bg-main)] rounded-xl px-4 py-3">
-        <p className="text-[11px] text-[var(--text-muted)] mb-1">C 盘已索引占用</p>
-        <p className="text-lg font-bold text-[var(--text-primary)] tabular-nums">
-          {formatSize(scanSummary.total_size)}
+    <div className="grid grid-cols-4 gap-3">
+      <div className="min-w-0 bg-[var(--bg-main)] rounded-xl px-3 py-3">
+        <p className="text-[11px] text-[var(--text-muted)] mb-1 truncate" title="C 盘已索引占用">C 盘已占用</p>
+        <p className="text-base font-bold text-[var(--text-primary)] tabular-nums truncate" title={indexedSizeText}>
+          {indexedSizeText}
         </p>
       </div>
-      <div className="bg-[var(--bg-main)] rounded-xl px-4 py-3">
-        <p className="text-[11px] text-[var(--text-muted)] mb-1">与上次净变化</p>
+      <div className="min-w-0 bg-[var(--bg-main)] rounded-xl px-3 py-3">
+        <p className="text-[11px] text-[var(--text-muted)] mb-1 truncate" title="与上次净变化">与上次净变化</p>
         <p
-          className={`text-lg font-bold tabular-nums ${
+          className={`text-base font-bold tabular-nums truncate ${
             totalGrowth > 0
               ? 'text-red-500'
               : totalGrowth < 0
                 ? 'text-green-500'
                 : 'text-[var(--text-muted)]'
           }`}
+          title={totalGrowthText}
         >
-          {totalGrowth === 0 ? '暂无变化' : formatDiff(totalGrowth)}
+          {totalGrowthText}
         </p>
       </div>
-      <div className="bg-[var(--bg-main)] rounded-xl px-4 py-3">
-        <p className="text-[11px] text-[var(--text-muted)] mb-1">上次扫描</p>
-        <p className="text-sm font-semibold text-[var(--text-primary)] tabular-nums truncate">
-          {formatPreviousScanTime(scanSummary)}
+      <div className="min-w-0 bg-[var(--bg-main)] rounded-xl px-3 py-3">
+        <p className="text-[11px] text-[var(--text-muted)] mb-1 truncate" title="上次扫描">上次扫描</p>
+        <p className="text-[13px] font-semibold text-[var(--text-primary)] tabular-nums truncate" title={previousScanText}>
+          {previousScanText}
         </p>
       </div>
-      <div className="bg-[var(--bg-main)] rounded-xl px-4 py-3">
-        <p className="text-[11px] text-[var(--text-muted)] mb-1">扫描文件数</p>
-        <p className="text-lg font-bold text-[var(--brand-green)] tabular-nums">
-          {scanSummary.total_files_scanned.toLocaleString()}
+      <div className="min-w-0 bg-[var(--bg-main)] rounded-xl px-3 py-3">
+        <p className="text-[11px] text-[var(--text-muted)] mb-1 truncate" title="扫描文件数">扫描文件数</p>
+        <p className="text-base font-bold text-[var(--brand-green)] tabular-nums truncate" title={scannedFileCountText}>
+          {scannedFileCountText}
         </p>
       </div>
       {growthReport.entries.length > 0 && (
-        <div className="col-span-4 flex items-center gap-3 text-[12px] text-[var(--text-muted)]">
+        <div className="col-span-4 flex items-center gap-3 text-[12px] text-[var(--text-muted)] min-w-0 overflow-hidden whitespace-nowrap">
           <span className="text-red-500">新增 {formatSize(scanSummary.analyze.increased_size ?? 0)}</span>
           <span className="text-green-500">减少 {formatSize(scanSummary.analyze.decreased_size ?? 0)}</span>
-          <span>按变化量排序</span>
+          <span className="truncate">按变化量排序</span>
         </div>
       )}
     </div>
