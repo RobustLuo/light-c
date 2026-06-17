@@ -179,6 +179,7 @@ pub fn compare_snapshots(
         })
         .collect();
 
+    remove_redundant_parent_entries(&mut entries);
     entries.sort_by(|left, right| {
         right
             .diff
@@ -245,6 +246,22 @@ fn snapshot_map(entries: &[DiskSnapshotEntry]) -> HashMap<String, u64> {
         .iter()
         .map(|entry| (entry.path.clone(), entry.size))
         .collect()
+}
+
+fn remove_redundant_parent_entries(entries: &mut Vec<DiskGrowthEntry>) {
+    let diff_by_path: HashMap<String, i64> = entries
+        .iter()
+        .map(|entry| (entry.path.clone(), entry.diff))
+        .collect();
+
+    entries.retain(|entry| {
+        // 只有父目录变化量与某个直接子目录完全一致时才折叠父级，避免多个子目录共同变化时误删有效汇总。
+        !entry.details.iter().any(|detail| {
+            detail.diff == entry.diff
+                && detail.diff.signum() == entry.diff.signum()
+                && diff_by_path.get(&detail.path).copied() == Some(detail.diff)
+        })
+    });
 }
 
 fn direct_child_map(entries: &[DiskSnapshotEntry]) -> HashMap<String, HashMap<String, u64>> {
