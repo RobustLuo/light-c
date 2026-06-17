@@ -17,6 +17,7 @@ import {
   Search,
   XCircle,
   X,
+  ChevronRight,
   Sparkles,
   TrendingDown,
   TrendingUp,
@@ -85,6 +86,27 @@ function formatDuration(ms?: number): string {
 
 function formatPreviousScanTime(scanSummary: DiskGrowthScanResponse): string {
   return scanSummary.previous_scan_time || '暂无历史快照';
+}
+
+function normalizeDiskPath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/g, '').toLowerCase();
+}
+
+function buildChildGrowthEntry(parent: DiskGrowthEntry, path: string): DiskGrowthEntry | null {
+  const detail = (parent.details ?? []).find((item) => normalizeDiskPath(item.path) === normalizeDiskPath(path));
+  if (!detail) return null;
+  const style = getGrowthStyle(detail.level);
+  return {
+    path: detail.path,
+    old_size: detail.old_size,
+    new_size: detail.new_size,
+    diff: detail.diff,
+    diff_percent: detail.old_size > 0 ? (detail.diff / detail.old_size) * 100 : 100,
+    level: detail.level,
+    explanation: `${style.label}，空间${detail.diff > 0 ? '增加' : '减少'} ${formatSize(Math.abs(detail.diff))}`,
+    suggestion: '建议继续查看文件级变化或打开目录确认来源',
+    details: [],
+  };
 }
 
 function getGrowthStyle(level: DiskGrowthEntry['level']) {
@@ -338,30 +360,36 @@ function ChangeRow({
 
 function DiskGrowthDetailsModal({
   entry,
+  closing,
   onClose,
   onOpenFolder,
 }: {
   entry: DiskGrowthEntry | null;
+  closing: boolean;
   onClose: () => void;
   onOpenFolder: (path: string) => void;
 }) {
-  const [visible, setVisible] = useState(false);
+  const [currentEntry, setCurrentEntry] = useState<DiskGrowthEntry | null>(entry);
   const [fileDetails, setFileDetails] = useState<DiskGrowthFileDetailsResponse | null>(null);
   const [fileLoading, setFileLoading] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  const rootPath = entry?.path ?? '';
+  const currentPath = currentEntry?.path ?? rootPath;
 
   useEffect(() => {
-    if (!entry) return;
+    setCurrentEntry(entry);
+  }, [entry]);
+
+  useEffect(() => {
+    if (!currentEntry) return;
 
     let cancelled = false;
-    setVisible(false);
     setFileDetails(null);
     setFileError(null);
     setFileLoading(true);
-    const frame = window.requestAnimationFrame(() => setVisible(true));
 
     // 文件级明细按需懒加载，避免主扫描结果一次性携带几十万文件记录。
-    getDiskGrowthFileDetails(entry.path, 200)
+    getDiskGrowthFileDetails(currentEntry.path, 200)
       .then((result) => {
         if (!cancelled) setFileDetails(result);
       })
@@ -374,17 +402,32 @@ function DiskGrowthDetailsModal({
 
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(frame);
     };
-  }, [entry]);
+  }, [currentEntry]);
 
-  if (!entry) return null;
+  if (!entry || !currentEntry) return null;
 
-  const style = getGrowthStyle(entry.level);
-  const details = entry.details ?? [];
-  const handleClose = () => {
-    setVisible(false);
-    window.setTimeout(onClose, 160);
+  const style = getGrowthStyle(currentEntry.level);
+  const details = currentEntry.details ?? [];
+  const rootNormalized = normalizeDiskPath(rootPath);
+  const currentNormalized = normalizeDiskPath(currentPath);
+  const relativeParts = currentNormalized.startsWith(rootNormalized)
+    ? currentPath
+        .slice(rootPath.length)
+        .replace(/^\/+/, '')
+        .split('/')
+        .filter(Boolean)
+    : [];
+  const breadcrumbItems = [
+    { label: rootPath, path: rootPath },
+    ...relativeParts.map((part, index) => ({
+      label: part,
+      path: `${rootPath.replace(/\/+$/g, '')}/${relativeParts.slice(0, index + 1).join('/')}`,
+    })),
+  ];
+  const handleEnterDirectory = (path: string) => {
+    const childEntry = buildChildGrowthEntry(currentEntry, path);
+    if (childEntry) setCurrentEntry(childEntry);
   };
   const renderFileRows = (files: DiskGrowthFileDetailEntry[]) =>
     files.map((file) => {
@@ -422,25 +465,43 @@ function DiskGrowthDetailsModal({
   return (
     <div
       className={`fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm transition-opacity duration-150 ${
-        visible ? 'opacity-100' : 'opacity-0'
+        closing ? 'opacity-0' : 'opacity-100'
       }`}
-      onClick={handleClose}
+      onClick={onClose}
     >
       <div
         className={`w-[720px] max-w-[calc(100vw-32px)] max-h-[84vh] rounded-2xl bg-[var(--bg-card)] shadow-2xl border border-[var(--border-color)] overflow-hidden transition-all duration-150 ${
-          visible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-2'
+          closing ? 'opacity-0 scale-95 translate-y-2' : 'opacity-100 scale-100 translate-y-0'
         }`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-color)]">
           <div className="min-w-0">
             <h3 className="text-sm font-semibold text-[var(--text-primary)]">变化明细</h3>
-            <p className="mt-1 text-xs text-[var(--text-muted)] truncate" title={entry.path}>
-              {entry.path}
-            </p>
+            <div className="mt-1 flex items-center gap-1 text-xs text-[var(--text-muted)] min-w-0">
+              {breadcrumbItems.map((item, index) => (
+                <div key={item.path} className="flex items-center gap-1 min-w-0">
+                  {index > 0 && <ChevronRight className="w-3 h-3 shrink-0 text-[var(--text-faint)]" />}
+                  <button
+                    onClick={() => {
+                      if (index === 0) {
+                        setCurrentEntry(entry);
+                        return;
+                      }
+                      const childEntry = buildChildGrowthEntry(entry, item.path);
+                      if (childEntry) setCurrentEntry(childEntry);
+                    }}
+                    className="truncate hover:text-[var(--brand-green)] transition-colors"
+                    title={item.path}
+                  >
+                    {index === 0 ? item.label : item.label}
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
           <button
-            onClick={handleClose}
+            onClick={onClose}
             className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
           >
             <X className="w-4 h-4" />
@@ -452,26 +513,26 @@ function DiskGrowthDetailsModal({
             <div className="rounded-xl bg-[var(--bg-main)] px-3 py-2">
               <p className="text-[11px] text-[var(--text-muted)]">上次大小</p>
               <p className="mt-1 text-sm font-semibold text-[var(--text-primary)] tabular-nums">
-                {formatSize(entry.old_size)}
+                {formatSize(currentEntry.old_size)}
               </p>
             </div>
             <div className="rounded-xl bg-[var(--bg-main)] px-3 py-2">
               <p className="text-[11px] text-[var(--text-muted)]">当前大小</p>
               <p className="mt-1 text-sm font-semibold text-[var(--text-primary)] tabular-nums">
-                {formatSize(entry.new_size)}
+                {formatSize(currentEntry.new_size)}
               </p>
             </div>
             <div className="rounded-xl bg-[var(--bg-main)] px-3 py-2">
               <p className="text-[11px] text-[var(--text-muted)]">变化量</p>
               <p className={`mt-1 text-sm font-semibold tabular-nums ${style.color}`}>
-                {formatDiff(entry.diff)}
+                {formatDiff(currentEntry.diff)}
               </p>
             </div>
           </div>
 
           <div className="rounded-xl bg-[var(--bg-main)] border border-[var(--border-color)] overflow-hidden">
             <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--border-color)] text-[11px] text-[var(--text-faint)]">
-              <span className="flex-1">文件级变化</span>
+              <span className="flex-1">文件变化</span>
               <span className="w-20 text-right">当前大小</span>
               <span className="w-24 text-right">变化量</span>
               <span className="w-10" />
@@ -505,7 +566,7 @@ function DiskGrowthDetailsModal({
 
           <div className="rounded-xl bg-[var(--bg-main)] border border-[var(--border-color)] overflow-hidden">
             <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--border-color)] text-[11px] text-[var(--text-faint)]">
-              <span className="flex-1">直接子目录</span>
+              <span className="flex-1">子目录</span>
               <span className="w-20 text-right">当前大小</span>
               <span className="w-24 text-right">变化量</span>
               <span className="w-10" />
@@ -533,11 +594,11 @@ function DiskGrowthDetailsModal({
                       {formatDiff(detail.diff)}
                     </span>
                     <button
-                      onClick={() => onOpenFolder(detail.path)}
+                      onClick={() => handleEnterDirectory(detail.path)}
                       className="w-10 flex justify-end p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--brand-green-10)] hover:text-[var(--brand-green)] transition"
-                      title="打开目录"
+                      title="进入目录查看文件变化"
                     >
-                      <FolderOpen className="w-4 h-4" />
+                      <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>
                 );
@@ -578,6 +639,7 @@ export function DiskGrowthModule() {
   const [scanElapsed, setScanElapsed] = useState(0);
   const [scanProgress, setScanProgress] = useState<DiskGrowthScanProgress | null>(null);
   const [detailEntry, setDetailEntry] = useState<DiskGrowthEntry | null>(null);
+  const [detailClosing, setDetailClosing] = useState(false);
 
   const isExpanded = expandedModule === 'disk-growth';
 
@@ -648,6 +710,7 @@ export function DiskGrowthModule() {
     setScanProgress(null);
     setShowAll(false);
     setDetailEntry(null);
+    setDetailClosing(false);
 
     try {
       const result = await scanDiskGrowth(settings.diskGrowthMaxEntries);
@@ -723,6 +786,19 @@ export function DiskGrowthModule() {
     } catch (err) {
       console.error('搜索路径用途失败:', err);
     }
+  }, []);
+
+  const handleShowDetails = useCallback((entry: DiskGrowthEntry) => {
+    setDetailEntry(entry);
+    setDetailClosing(false);
+  }, []);
+
+  const handleCloseDetails = useCallback(() => {
+    setDetailClosing(true);
+    window.setTimeout(() => {
+      setDetailEntry(null);
+      setDetailClosing(false);
+    }, 170);
   }, []);
 
   const growthMap = useMemo(() => {
@@ -836,7 +912,7 @@ export function DiskGrowthModule() {
                   growth={growthMap.get(normalizedPath) ?? null}
                   onOpenFolder={handleOpenFolder}
                   onSearchPath={handleSearchPath}
-                  onShowDetails={setDetailEntry}
+                  onShowDetails={handleShowDetails}
                 />
               );
             })}
@@ -866,7 +942,8 @@ export function DiskGrowthModule() {
       )}
       <DiskGrowthDetailsModal
         entry={detailEntry}
-        onClose={() => setDetailEntry(null)}
+        closing={detailClosing}
+        onClose={handleCloseDetails}
         onOpenFolder={handleOpenFolder}
       />
     </ModuleCard>
