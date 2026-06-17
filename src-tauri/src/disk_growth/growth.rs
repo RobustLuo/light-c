@@ -20,6 +20,7 @@ const MINOR_THRESHOLD: i64 = 1;
 const DEFAULT_MAX_CHANGE_ENTRIES: usize = 300;
 const MIN_CHANGE_ENTRIES: usize = 50;
 const MAX_CHANGE_ENTRIES: usize = 1000;
+const MAX_DETAIL_ENTRIES: usize = 50;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -33,6 +34,16 @@ pub enum DiskGrowthLevel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskGrowthDetailEntry {
+    pub path: String,
+    pub name: String,
+    pub old_size: u64,
+    pub new_size: u64,
+    pub diff: i64,
+    pub level: DiskGrowthLevel,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiskGrowthEntry {
     pub path: String,
     pub old_size: u64,
@@ -42,6 +53,7 @@ pub struct DiskGrowthEntry {
     pub level: DiskGrowthLevel,
     pub explanation: String,
     pub suggestion: String,
+    pub details: Vec<DiskGrowthDetailEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +164,8 @@ pub fn compare_snapshots(
 
     let current_map = snapshot_map(&current.entries);
     let previous_map = snapshot_map(&previous.entries);
+    let current_children = direct_child_map(&current.entries);
+    let previous_children = direct_child_map(&previous.entries);
     let mut all_paths: HashSet<String> = current_map.keys().cloned().collect();
     all_paths.extend(previous_map.keys().cloned());
 
@@ -160,7 +174,8 @@ pub fn compare_snapshots(
         .filter_map(|path| {
             let old_size = previous_map.get(&path).copied().unwrap_or(0);
             let new_size = current_map.get(&path).copied().unwrap_or(0);
-            create_growth_entry(path, old_size, new_size)
+            let details = build_detail_entries(&path, &previous_children, &current_children);
+            create_growth_entry(path, old_size, new_size, details)
         })
         .collect();
 
@@ -232,7 +247,93 @@ fn snapshot_map(entries: &[DiskSnapshotEntry]) -> HashMap<String, u64> {
         .collect()
 }
 
-fn create_growth_entry(path: String, old_size: u64, new_size: u64) -> Option<DiskGrowthEntry> {
+fn direct_child_map(entries: &[DiskSnapshotEntry]) -> HashMap<String, HashMap<String, u64>> {
+    let mut child_map: HashMap<String, HashMap<String, u64>> = HashMap::new();
+    for entry in entries {
+        let Some(parent) = parent_path(&entry.path) else {
+            continue;
+        };
+        // 变化明细只展示直接子目录，避免把所有后代目录重复摊开造成列表噪音。
+        child_map
+            .entry(parent)
+            .or_default()
+            .insert(entry.path.clone(), entry.size);
+    }
+    child_map
+}
+
+fn build_detail_entries(
+    parent: &str,
+    previous_children: &HashMap<String, HashMap<String, u64>>,
+    current_children: &HashMap<String, HashMap<String, u64>>,
+) -> Vec<DiskGrowthDetailEntry> {
+    let previous = previous_children.get(parent);
+    let current = current_children.get(parent);
+    let mut all_paths = HashSet::new();
+
+    if let Some(previous) = previous {
+        all_paths.extend(previous.keys().cloned());
+    }
+    if let Some(current) = current {
+        all_paths.extend(current.keys().cloned());
+    }
+
+    let mut details: Vec<DiskGrowthDetailEntry> = all_paths
+        .into_iter()
+        .filter_map(|path| {
+            let old_size = previous.and_then(|map| map.get(&path)).copied().unwrap_or(0);
+            let new_size = current.and_then(|map| map.get(&path)).copied().unwrap_or(0);
+            let diff = new_size as i64 - old_size as i64;
+            if diff == 0 {
+                return None;
+            }
+
+            Some(DiskGrowthDetailEntry {
+                name: display_name_from_path(&path),
+                path,
+                old_size,
+                new_size,
+                diff,
+                level: determine_level(diff, old_size),
+            })
+        })
+        .collect();
+
+    details.sort_by(|left, right| {
+        right
+            .diff
+            .abs()
+            .cmp(&left.diff.abs())
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    details.truncate(MAX_DETAIL_ENTRIES);
+    details
+}
+
+fn parent_path(path: &str) -> Option<String> {
+    let normalized = path.trim_end_matches('/');
+    let separator_index = normalized.rfind('/')?;
+    if separator_index <= 2 {
+        return Some(format!("{}/", &normalized[..separator_index]));
+    }
+    Some(normalized[..separator_index].to_string())
+}
+
+fn display_name_from_path(path: &str) -> String {
+    path.trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(path)
+        .to_string()
+}
+
+fn create_growth_entry(
+    path: String,
+    old_size: u64,
+    new_size: u64,
+    details: Vec<DiskGrowthDetailEntry>,
+) -> Option<DiskGrowthEntry> {
     let diff = new_size as i64 - old_size as i64;
     if diff == 0 {
         return None;
@@ -259,6 +360,7 @@ fn create_growth_entry(path: String, old_size: u64, new_size: u64) -> Option<Dis
         level,
         explanation,
         suggestion,
+        details,
     })
 }
 

@@ -943,6 +943,21 @@ export async function openStorageSettings(): Promise<void> {
 // ============================================================================
 
 /** 全盘变化条目 */
+export interface DiskGrowthDetailEntry {
+  /** 发生变化的直接子目录路径 */
+  path: string;
+  /** 子目录名称，用于弹窗列表展示 */
+  name: string;
+  /** 上次快照大小 */
+  old_size: number;
+  /** 本次快照大小 */
+  new_size: number;
+  /** 与上次快照相比的变化量，正数为新增，负数为减少 */
+  diff: number;
+  /** 明细变化级别 */
+  level: 'significant' | 'fast' | 'minor' | 'stable' | 'decreased' | 'new';
+}
+
 export interface DiskGrowthEntry {
   /** 目录路径 */
   path: string;
@@ -960,6 +975,8 @@ export interface DiskGrowthEntry {
   explanation: string;
   /** 排查建议，不代表该目录可以直接清理 */
   suggestion: string;
+  /** 该目录下一级子目录的变化明细，后端默认最多返回 50 条 */
+  details: DiskGrowthDetailEntry[];
 }
 
 /** 全盘变化报告 */

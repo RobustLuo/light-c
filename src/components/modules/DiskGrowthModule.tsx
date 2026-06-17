@@ -16,6 +16,7 @@ import {
   Minus,
   Search,
   XCircle,
+  X,
   Sparkles,
   TrendingDown,
   TrendingUp,
@@ -255,11 +256,13 @@ function ChangeRow({
   growth,
   onOpenFolder,
   onSearchPath,
+  onShowDetails,
 }: {
   entry: DiskGrowthAnalyzeEntry;
   growth: DiskGrowthEntry | null;
   onOpenFolder: (path: string) => void;
   onSearchPath: (path: string) => void;
+  onShowDetails: (growth: DiskGrowthEntry) => void;
 }) {
   const style = growth ? getGrowthStyle(growth.level) : getGrowthStyle('stable');
   const Icon = style.icon;
@@ -299,9 +302,16 @@ function ChangeRow({
         {formatSize(entry.size)}
       </span>
 
-      <span className={`text-[13px] font-medium tabular-nums w-24 text-right shrink-0 ${style.color}`}>
+      <button
+        onClick={() => growth && onShowDetails(growth)}
+        disabled={!growth}
+        className={`text-[13px] font-medium tabular-nums w-24 text-right shrink-0 ${style.color} ${
+          growth ? 'hover:underline underline-offset-4 cursor-pointer' : 'cursor-default'
+        }`}
+        title={growth ? '查看该目录下一级变化明细' : undefined}
+      >
         {diff === 0 ? '-' : formatDiff(diff)}
-      </span>
+      </button>
 
       <div className="flex w-16 shrink-0 justify-end gap-0.5 opacity-0 transition group-hover:opacity-100">
         <button
@@ -323,6 +333,118 @@ function ChangeRow({
   );
 }
 
+function DiskGrowthDetailsModal({
+  entry,
+  onClose,
+  onOpenFolder,
+}: {
+  entry: DiskGrowthEntry | null;
+  onClose: () => void;
+  onOpenFolder: (path: string) => void;
+}) {
+  if (!entry) return null;
+
+  const style = getGrowthStyle(entry.level);
+  const details = entry.details ?? [];
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="w-[620px] max-w-[calc(100vw-32px)] max-h-[80vh] rounded-2xl bg-[var(--bg-card)] shadow-2xl border border-[var(--border-color)] overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-color)]">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">变化明细</h3>
+            <p className="mt-1 text-xs text-[var(--text-muted)] truncate" title={entry.path}>
+              {entry.path}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(80vh-72px)]">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-xl bg-[var(--bg-main)] px-3 py-2">
+              <p className="text-[11px] text-[var(--text-muted)]">上次大小</p>
+              <p className="mt-1 text-sm font-semibold text-[var(--text-primary)] tabular-nums">
+                {formatSize(entry.old_size)}
+              </p>
+            </div>
+            <div className="rounded-xl bg-[var(--bg-main)] px-3 py-2">
+              <p className="text-[11px] text-[var(--text-muted)]">当前大小</p>
+              <p className="mt-1 text-sm font-semibold text-[var(--text-primary)] tabular-nums">
+                {formatSize(entry.new_size)}
+              </p>
+            </div>
+            <div className="rounded-xl bg-[var(--bg-main)] px-3 py-2">
+              <p className="text-[11px] text-[var(--text-muted)]">变化量</p>
+              <p className={`mt-1 text-sm font-semibold tabular-nums ${style.color}`}>
+                {formatDiff(entry.diff)}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-[var(--bg-main)] border border-[var(--border-color)] overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--border-color)] text-[11px] text-[var(--text-faint)]">
+              <span className="flex-1">直接子目录</span>
+              <span className="w-20 text-right">当前大小</span>
+              <span className="w-24 text-right">变化量</span>
+              <span className="w-10" />
+            </div>
+            {details.length > 0 ? (
+              details.map((detail) => {
+                const detailStyle = getGrowthStyle(detail.level);
+                return (
+                  <div
+                    key={detail.path}
+                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg-hover)] transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] text-[var(--text-primary)] truncate" title={detail.path}>
+                        {detail.name}
+                      </p>
+                      <p className="text-[11px] text-[var(--text-faint)] truncate" title={detail.path}>
+                        {detail.path}
+                      </p>
+                    </div>
+                    <span className="w-20 text-right text-[13px] font-medium text-[var(--text-primary)] tabular-nums">
+                      {formatSize(detail.new_size)}
+                    </span>
+                    <span className={`w-24 text-right text-[13px] font-medium tabular-nums ${detailStyle.color}`}>
+                      {formatDiff(detail.diff)}
+                    </span>
+                    <button
+                      onClick={() => onOpenFolder(detail.path)}
+                      className="w-10 flex justify-end p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--brand-green-10)] hover:text-[var(--brand-green)] transition"
+                      title="打开目录"
+                    >
+                      <FolderOpen className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="px-4 py-8 text-center">
+                <p className="text-sm text-[var(--text-muted)]">暂无下一级变化明细</p>
+                <p className="mt-1 text-xs text-[var(--text-faint)]">
+                  当前快照只保存目录聚合数据；文件级新增明细需要从后续版本开始额外记录文件快照。
+                </p>
+              </div>
+            )}
+          </div>
+
+          <p className="text-[11px] text-[var(--text-faint)]">
+            说明：这里展示的是该目录下一级子目录的空间变化，用于继续定位来源，不代表这些目录可以直接删除。
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DiskGrowthModule() {
   const { modules, expandedModule, setExpandedModule, updateModuleState, oneClickScanTrigger, stopScanTrigger } = useDashboard();
   const { settings } = useSettings();
@@ -339,6 +461,7 @@ export function DiskGrowthModule() {
   const [showAll, setShowAll] = useState(false);
   const [scanElapsed, setScanElapsed] = useState(0);
   const [scanProgress, setScanProgress] = useState<DiskGrowthScanProgress | null>(null);
+  const [detailEntry, setDetailEntry] = useState<DiskGrowthEntry | null>(null);
 
   const isExpanded = expandedModule === 'disk-growth';
 
@@ -408,6 +531,7 @@ export function DiskGrowthModule() {
     setGrowthReport(null);
     setScanProgress(null);
     setShowAll(false);
+    setDetailEntry(null);
 
     try {
       const result = await scanDiskGrowth(settings.diskGrowthMaxEntries);
@@ -596,6 +720,7 @@ export function DiskGrowthModule() {
                   growth={growthMap.get(normalizedPath) ?? null}
                   onOpenFolder={handleOpenFolder}
                   onSearchPath={handleSearchPath}
+                  onShowDetails={setDetailEntry}
                 />
               );
             })}
@@ -623,6 +748,11 @@ export function DiskGrowthModule() {
           </div>
         </div>
       )}
+      <DiskGrowthDetailsModal
+        entry={detailEntry}
+        onClose={() => setDetailEntry(null)}
+        onOpenFolder={handleOpenFolder}
+      />
     </ModuleCard>
   );
 }
