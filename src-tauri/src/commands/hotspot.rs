@@ -41,10 +41,21 @@ pub async fn scan_hotspot(
     let ignore = ignore_system_dirs.unwrap_or(true);
 
     if is_full_scan {
-        info!("开始全盘深度扫描，Top {}，最大深度 {}，阈值 {}MB，忽略系统目录: {}", n, depth, threshold / 1024 / 1024, ignore);
+        info!(
+            "开始全盘深度扫描，Top {}，最大深度 {}，阈值 {}MB，忽略系统目录: {}",
+            n,
+            depth,
+            threshold / 1024 / 1024,
+            ignore
+        );
         crate::scanner::reset_hotspot_cancelled();
     } else {
-        info!("开始扫描 AppData 目录，Top {}，展示深度 {}，阈值 {}MB", n, depth, threshold / 1024 / 1024);
+        info!(
+            "开始扫描 AppData 目录，Top {}，展示深度 {}，阈值 {}MB",
+            n,
+            depth,
+            threshold / 1024 / 1024
+        );
     }
 
     let result = tokio::task::spawn_blocking(move || {
@@ -77,9 +88,7 @@ pub async fn scan_hotspot(
 
 /// 单层路径钻取扫描
 #[tauri::command]
-pub async fn scan_path_direct(
-    path: String,
-) -> Result<crate::scanner::HotspotScanResult, String> {
+pub async fn scan_path_direct(path: String) -> Result<crate::scanner::HotspotScanResult, String> {
     use crate::scanner::HotspotScanner;
 
     info!("路径钻取扫描: {}", path);

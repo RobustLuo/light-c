@@ -29,9 +29,7 @@ pub fn clear_local_data() -> Result<(usize, u64), String> {
 
 /// 打开系统文件夹选择对话框
 #[tauri::command]
-pub async fn pick_folder_dialog(
-    app: tauri::AppHandle,
-) -> Result<Option<String>, String> {
+pub async fn pick_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
 
     let result = app

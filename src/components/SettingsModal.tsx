@@ -586,6 +586,18 @@ function FeatureSettings() {
               </p>
             </div>
             <div>
+              <p className="text-sm font-medium text-[var(--text-primary)]">扫描速度</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
+                全盘分析主要受文件数量、硬盘类型和系统负载影响。M.2 SSD 通常最快，SATA SSD 次之，机械硬盘会明显变慢；C 盘容量越大不一定越慢，真正决定耗时的是文件记录数量、$MFT 体积、metadata 回退数量和安全软件实时扫描。
+              </p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-[var(--text-primary)]">首次 MFT 预热</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
+                应用启动后第一次 MFT 扫描可能比后续扫描慢十几秒，这是 Windows 文件系统缓存、$MFT 数据和安全软件检查尚未预热导致的正常现象。完成一次 MFT 扫描后，大目录、大文件和全盘分析等模块通常都会明显变快。
+              </p>
+            </div>
+            <div>
               <p className="text-sm font-medium text-[var(--text-primary)]">颜色指标</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 mt-2 text-xs text-[var(--text-muted)]">
                 <p className="flex items-center gap-2">
@@ -769,6 +781,14 @@ function GuideSettings() {
             <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6 mt-2">
               <span className="text-[var(--brand-green)] font-medium">变化定位：</span>
               每次扫描会与上次快照对比，计算 C 盘净新增/净减少空间，并按变化量列出对应目录、当前大小、变化级别和原因提示。
+            </p>
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6 mt-2">
+              <span className="text-[var(--brand-green)] font-medium">性能边界：</span>
+              扫描速度主要取决于文件数量、$MFT 体积、硬盘类型和安全软件实时扫描。容量几个 TB 的 C 盘也能工作，但文件记录越多，MFT 枚举、路径重建和快照分片写入越耗时。
+            </p>
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6 mt-2">
+              <span className="text-[var(--brand-green)] font-medium">首次预热：</span>
+              应用启动后第一次 MFT 扫描可能较慢，属于 Windows 文件系统缓存尚未预热的正常现象；完成一次 MFT 扫描后，同类模块通常会明显变快。
             </p>
             <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6 mt-2">
               <span className="text-[var(--brand-green)] font-medium">只做分析：</span>

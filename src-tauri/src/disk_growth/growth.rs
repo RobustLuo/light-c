@@ -153,7 +153,7 @@ where
     let scan = scan_system_drive_with_progress(progress)?;
     let current_snapshot = build_snapshot(&scan);
     let growth = compare_snapshots(&current_snapshot, previous.as_ref(), max_change_entries);
-    manager.save_snapshot(&current_snapshot)?;
+    manager.save_scan_snapshot(&scan)?;
 
     let analyze_entries = build_analyze_entries(&scan.entries, &growth);
     let increased_size = growth
@@ -196,19 +196,33 @@ pub fn get_file_change_details(
     limit: Option<usize>,
 ) -> Result<DiskGrowthFileDetailsResponse, String> {
     let manager = DiskSnapshotManager::new()?;
-    let Some((previous, current)) = manager.load_latest_two_snapshots()? else {
+    let Some((previous_handle, current_handle)) = manager.load_latest_two_snapshot_handles()?
+    else {
         return Err("至少完成两次 C 盘全盘扫描后，才能查看文件级变化明细".to_string());
     };
-
-    if previous.file_entries.is_empty() || current.file_entries.is_empty() {
+    if !manager.has_file_detail_storage(&previous_handle.path, &previous_handle.snapshot)
+        || !manager.has_file_detail_storage(&current_handle.path, &current_handle.snapshot)
+    {
         return Err("最近快照不包含文件级明细，请再完成一次全盘扫描后重试".to_string());
     }
 
     let normalized_path = normalize_query_path(&path);
     let offset = offset.unwrap_or(0);
-    let limit = limit.unwrap_or(DEFAULT_DETAIL_PAGE_SIZE).clamp(1, MAX_DETAIL_PAGE_SIZE);
-    let previous_map = file_snapshot_map(&previous.file_entries, &normalized_path);
-    let current_map = file_snapshot_map(&current.file_entries, &normalized_path);
+    let limit = limit
+        .unwrap_or(DEFAULT_DETAIL_PAGE_SIZE)
+        .clamp(1, MAX_DETAIL_PAGE_SIZE);
+    let previous_entries = manager.load_file_entries_for_parent(
+        &previous_handle.path,
+        &previous_handle.snapshot,
+        &normalized_path,
+    )?;
+    let current_entries = manager.load_file_entries_for_parent(
+        &current_handle.path,
+        &current_handle.snapshot,
+        &normalized_path,
+    )?;
+    let previous_map = file_snapshot_map(&previous_entries);
+    let current_map = file_snapshot_map(&current_entries);
     let mut all_paths: HashSet<String> = previous_map.keys().cloned().collect();
     all_paths.extend(current_map.keys().cloned());
 
@@ -247,8 +261,8 @@ pub fn get_file_change_details(
 
     Ok(DiskGrowthFileDetailsResponse {
         path: normalized_path,
-        previous_scan_time: previous.date,
-        current_scan_time: current.date,
+        previous_scan_time: previous_handle.snapshot.date,
+        current_scan_time: current_handle.snapshot.date,
         returned_files,
         total_changed_files,
         has_more: offset + returned_files < total_changed_files,
@@ -269,10 +283,13 @@ pub fn get_directory_change_details(
 
     let normalized_path = normalize_query_path(&path);
     let offset = offset.unwrap_or(0);
-    let limit = limit.unwrap_or(DEFAULT_DETAIL_PAGE_SIZE).clamp(1, MAX_DETAIL_PAGE_SIZE);
+    let limit = limit
+        .unwrap_or(DEFAULT_DETAIL_PAGE_SIZE)
+        .clamp(1, MAX_DETAIL_PAGE_SIZE);
     let previous_children = direct_child_map(&previous.entries);
     let current_children = direct_child_map(&current.entries);
-    let details = build_detail_entries_unlimited(&normalized_path, &previous_children, &current_children);
+    let details =
+        build_detail_entries_unlimited(&normalized_path, &previous_children, &current_children);
     let total_changed_dirs = details.len();
     let paged_entries: Vec<DiskGrowthDetailEntry> =
         details.into_iter().skip(offset).take(limit).collect();
@@ -385,25 +402,15 @@ fn snapshot_map(entries: &[DiskSnapshotEntry]) -> HashMap<String, u64> {
         .collect()
 }
 
-fn file_snapshot_map(entries: &[FileSnapshotEntry], parent_path: &str) -> HashMap<String, u64> {
+fn file_snapshot_map(entries: &[FileSnapshotEntry]) -> HashMap<String, u64> {
     entries
         .iter()
-        .filter(|entry| is_same_or_child_path(&entry.path, parent_path))
         .map(|entry| (entry.path.clone(), entry.size))
         .collect()
 }
 
 fn normalize_query_path(path: &str) -> String {
     normalize_path(path).trim_end_matches('/').to_string()
-}
-
-fn is_same_or_child_path(path: &str, parent_path: &str) -> bool {
-    if path == parent_path {
-        return true;
-    }
-    let prefix = format!("{}/", parent_path.trim_end_matches('/'));
-    // 文件级明细只在用户点击的目录范围内比较，避免全盘文件快照一次性进入排序。
-    path.starts_with(&prefix)
 }
 
 fn remove_redundant_parent_entries(entries: &mut Vec<DiskGrowthEntry>) {
@@ -466,7 +473,10 @@ fn build_detail_entries_unlimited(
     let mut details: Vec<DiskGrowthDetailEntry> = all_paths
         .into_iter()
         .filter_map(|path| {
-            let old_size = previous.and_then(|map| map.get(&path)).copied().unwrap_or(0);
+            let old_size = previous
+                .and_then(|map| map.get(&path))
+                .copied()
+                .unwrap_or(0);
             let new_size = current.and_then(|map| map.get(&path)).copied().unwrap_or(0);
             let diff = new_size as i64 - old_size as i64;
             if diff == 0 {

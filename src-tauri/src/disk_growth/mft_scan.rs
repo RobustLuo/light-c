@@ -244,19 +244,22 @@ where
         .map(|record| record.size)
         .sum();
     push_phase_duration(&mut phase_durations, "aggregate", phase_start);
+    let total_files_scanned = file_size_collection.records.len();
+    // 这里消费原始记录生成文件级快照，避免在超大磁盘下 clone 出第二份完整路径列表。
+    let file_entries = file_size_collection
+        .records
+        .into_iter()
+        .map(|record| FileSnapshotEntry {
+            path: record.path,
+            size: record.size,
+        })
+        .collect();
 
     Ok(FullDiskScanResult {
         entries,
-        file_entries: file_size_collection
-            .records
-            .iter()
-            .map(|record| FileSnapshotEntry {
-                path: record.path.clone(),
-                size: record.size,
-            })
-            .collect(),
+        file_entries,
         total_size,
-        total_files_scanned: file_size_collection.records.len(),
+        total_files_scanned,
         scan_duration_ms: start.elapsed().as_millis() as u64,
         root_path: drive_root,
         backend: "mft".to_string(),
@@ -685,13 +688,12 @@ impl NtfsFileSizeReader {
             .ok_or_else(|| "NTFS 引导扇区缺少 sectors_per_cluster".to_string())?
             as usize;
         let cluster_size = (bytes_per_sector * sectors_per_cluster) as u64;
-        let mft_lcn = read_i64(&boot_sector, 48)
-            .ok_or_else(|| "NTFS 引导扇区缺少 MFT LCN".to_string())?;
+        let mft_lcn =
+            read_i64(&boot_sector, 48).ok_or_else(|| "NTFS 引导扇区缺少 MFT LCN".to_string())?;
         let file_record_size = decode_file_record_size(
             *boot_sector
                 .get(64)
-                .ok_or_else(|| "NTFS 引导扇区缺少 FILE record 大小".to_string())?
-                as i8,
+                .ok_or_else(|| "NTFS 引导扇区缺少 FILE record 大小".to_string())? as i8,
             cluster_size,
         );
 
@@ -801,7 +803,8 @@ impl NtfsFileSizeReader {
                 bytes_read_in_run += aligned_read_len as u64;
             }
 
-            next_record_id += records_in_run.saturating_sub(bytes_read_in_run / self.file_record_size as u64);
+            next_record_id +=
+                records_in_run.saturating_sub(bytes_read_in_run / self.file_record_size as u64);
         }
 
         size_by_mft_id

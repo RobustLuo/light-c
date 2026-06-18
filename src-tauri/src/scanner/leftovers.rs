@@ -653,10 +653,8 @@ impl InstalledAppMap {
         // 加载历史安装文件夹并计算疑似残留候选
         // leftover_candidates = 曾经在 InstallLocation 中出现过但当前注册表中已找不到的文件夹
         let mut historical = load_install_history();
-        let leftover_candidates: HashSet<String> = historical
-            .difference(&known_folders)
-            .cloned()
-            .collect();
+        let leftover_candidates: HashSet<String> =
+            historical.difference(&known_folders).cloned().collect();
 
         // 将当前已知文件夹合并到历史记录中并持久化
         historical.extend(known_folders.iter().cloned());
@@ -1196,10 +1194,7 @@ impl LeftoverScanner {
                     // WSL2 等场景：文件在 \wsl\<GUID>\ext4.vhdx，直接父目录是 GUID，
                     // 但上级目录 "wsl" 在白名单中，应跳过
                     if self.is_path_in_whitelist(path, base_dir) {
-                        log::info!(
-                            "虚拟磁盘文件路径命中白名单，跳过: {}",
-                            path.display()
-                        );
+                        log::info!("虚拟磁盘文件路径命中白名单，跳过: {}", path.display());
                         continue;
                     }
 
@@ -1700,26 +1695,18 @@ mod tests {
         );
 
         // === 剪映场景 ===
-        let jianying_pro_path = Path::new(
-            r"C:\Users\test_user\AppData\Local\JianyingPro\User Data\Projects",
-        );
-        let jianying_drafts_path = Path::new(
-            r"C:\Users\test_user\AppData\Local\JianyingPro Drafts\xxx",
-        );
-        let capcut_path = Path::new(
-            r"C:\Users\test_user\AppData\Roaming\CapCut\User Data",
-        );
+        let jianying_pro_path =
+            Path::new(r"C:\Users\test_user\AppData\Local\JianyingPro\User Data\Projects");
+        let jianying_drafts_path =
+            Path::new(r"C:\Users\test_user\AppData\Local\JianyingPro Drafts\xxx");
+        let capcut_path = Path::new(r"C:\Users\test_user\AppData\Roaming\CapCut\User Data");
 
         // === 真实残留场景 ===
-        let real_leftover_path = Path::new(
-            r"C:\Users\test_user\AppData\Local\SomeRandomUninstalledApp\cache",
-        );
+        let real_leftover_path =
+            Path::new(r"C:\Users\test_user\AppData\Local\SomeRandomUninstalledApp\cache");
 
         // 验证：白名单包含关键目录名
-        assert!(
-            rules.iter().any(|r| r.matches("wsl")),
-            "wsl 应在白名单中"
-        );
+        assert!(rules.iter().any(|r| r.matches("wsl")), "wsl 应在白名单中");
         assert!(
             rules.iter().any(|r| r.matches("packages")),
             "packages 应在白名单中"

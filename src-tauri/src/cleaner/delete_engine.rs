@@ -13,7 +13,9 @@ use crate::scanner::{DeleteResult, FileInfo};
 // 安全保护配置 — 统一从共享模块引用
 // ============================================================================
 
-use super::safety_constants::{PROTECTED_EXTENSIONS_IN_WINDOWS, PROTECTED_FILES, PROTECTED_PATH_PREFIXES};
+use super::safety_constants::{
+    PROTECTED_EXTENSIONS_IN_WINDOWS, PROTECTED_FILES, PROTECTED_PATH_PREFIXES,
+};
 
 /// 删除引擎
 pub struct DeleteEngine {
@@ -177,8 +179,7 @@ impl DeleteEngine {
                     // 检测共享冲突（错误码 32，ERROR_SHARING_VIOLATION），
                     // 文件正被其他进程使用时无法直接删除，标记为重启后删除
                     #[cfg(windows)]
-                    let is_sharing_violation =
-                        e.raw_os_error() == Some(32); // ERROR_SHARING_VIOLATION
+                    let is_sharing_violation = e.raw_os_error() == Some(32); // ERROR_SHARING_VIOLATION
                     #[cfg(not(windows))]
                     let is_sharing_violation = false;
 

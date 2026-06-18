@@ -33,11 +33,10 @@ const CONFIG_FILE: &str = "config.json";
 // ============================================================================
 
 /// 全局数据目录路径缓存，避免每次读取磁盘
-static DATA_DIR_CACHE: std::sync::LazyLock<RwLock<PathBuf>> =
-    std::sync::LazyLock::new(|| {
-        let path = load_or_create();
-        RwLock::new(path)
-    });
+static DATA_DIR_CACHE: std::sync::LazyLock<RwLock<PathBuf>> = std::sync::LazyLock::new(|| {
+    let path = load_or_create();
+    RwLock::new(path)
+});
 
 // ============================================================================
 // 数据结构
@@ -72,10 +71,7 @@ fn load_or_create() -> PathBuf {
             if let Ok(config) = serde_json::from_str::<DataDirConfig>(&json) {
                 let custom = PathBuf::from(&config.data_dir);
                 if custom.is_dir() || fs::create_dir_all(&custom).is_ok() {
-                    log::info!(
-                        "数据目录 (自定义): {}",
-                        custom.display()
-                    );
+                    log::info!("数据目录 (自定义): {}", custom.display());
                     return custom;
                 }
                 log::warn!(
@@ -115,12 +111,9 @@ fn save_config_inner(path: &PathBuf) {
 
 /// 递归复制目录内容
 fn copy_dir_contents(src: &Path, dest: &Path) -> Result<(), String> {
-    fs::create_dir_all(dest)
-        .map_err(|e| format!("创建目标目录失败: {}", e))?;
+    fs::create_dir_all(dest).map_err(|e| format!("创建目标目录失败: {}", e))?;
 
-    for entry_res in
-        fs::read_dir(src).map_err(|e| format!("读取源目录失败: {}", e))?
-    {
+    for entry_res in fs::read_dir(src).map_err(|e| format!("读取源目录失败: {}", e))? {
         let entry = entry_res.map_err(|e| format!("读取目录条目失败: {}", e))?;
         let src_path = entry.path();
         let dest_path = dest.join(entry.file_name());
@@ -206,8 +199,7 @@ pub fn clear_local_data() -> Result<(usize, u64), String> {
         if let Ok(meta) = fs::metadata(&history_file) {
             total_size += meta.len();
         }
-        fs::remove_file(&history_file)
-            .map_err(|e| format!("删除安装历史失败: {}", e))?;
+        fs::remove_file(&history_file).map_err(|e| format!("删除安装历史失败: {}", e))?;
         file_count += 1;
         log::info!("已删除安装历史缓存");
     }
@@ -215,11 +207,9 @@ pub fn clear_local_data() -> Result<(usize, u64), String> {
     // 删除所有日志文件
     let logs_dir = data_dir.join("logs");
     if logs_dir.exists() && logs_dir.is_dir() {
-        for entry_res in
-            fs::read_dir(&logs_dir).map_err(|e| format!("读取日志目录失败: {}", e))?
+        for entry_res in fs::read_dir(&logs_dir).map_err(|e| format!("读取日志目录失败: {}", e))?
         {
-            let entry =
-                entry_res.map_err(|e| format!("读取日志条目失败: {}", e))?;
+            let entry = entry_res.map_err(|e| format!("读取日志条目失败: {}", e))?;
             let path = entry.path();
             if path.is_file() {
                 if let Ok(meta) = fs::metadata(&path) {

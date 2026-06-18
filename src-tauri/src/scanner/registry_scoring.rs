@@ -137,19 +137,17 @@ impl PathResolver {
         self.env_var_re
             .replace_all(s, |caps: &regex::Captures| {
                 let var_name = &caps[1];
-                std::env::var(var_name).unwrap_or_else(|_| {
-                    match var_name.to_uppercase().as_str() {
-                        "SYSTEMROOT" => "C:\\Windows".to_string(),
-                        "WINDIR" => "C:\\Windows".to_string(),
-                        "PROGRAMFILES" => "C:\\Program Files".to_string(),
-                        "PROGRAMFILES(X86)" => "C:\\Program Files (x86)".to_string(),
-                        "PROGRAMDATA" => "C:\\ProgramData".to_string(),
-                        "USERPROFILE" => "C:\\Users\\Default".to_string(),
-                        "APPDATA" => "C:\\Users\\Default\\AppData\\Roaming".to_string(),
-                        "LOCALAPPDATA" => "C:\\Users\\Default\\AppData\\Local".to_string(),
-                        "TEMP" | "TMP" => "C:\\Windows\\Temp".to_string(),
-                        _ => caps[0].to_string(),
-                    }
+                std::env::var(var_name).unwrap_or_else(|_| match var_name.to_uppercase().as_str() {
+                    "SYSTEMROOT" => "C:\\Windows".to_string(),
+                    "WINDIR" => "C:\\Windows".to_string(),
+                    "PROGRAMFILES" => "C:\\Program Files".to_string(),
+                    "PROGRAMFILES(X86)" => "C:\\Program Files (x86)".to_string(),
+                    "PROGRAMDATA" => "C:\\ProgramData".to_string(),
+                    "USERPROFILE" => "C:\\Users\\Default".to_string(),
+                    "APPDATA" => "C:\\Users\\Default\\AppData\\Roaming".to_string(),
+                    "LOCALAPPDATA" => "C:\\Users\\Default\\AppData\\Local".to_string(),
+                    "TEMP" | "TMP" => "C:\\Windows\\Temp".to_string(),
+                    _ => caps[0].to_string(),
                 })
             })
             .to_string()
@@ -270,9 +268,7 @@ mod tests {
             .unwrap();
         assert_eq!(path, PathBuf::from(r"C:\Program Files\App\app.exe"));
 
-        let (path, _) = resolver
-            .extract_and_resolve(r"C:\App\app.exe %1")
-            .unwrap();
+        let (path, _) = resolver.extract_and_resolve(r"C:\App\app.exe %1").unwrap();
         assert_eq!(path, PathBuf::from(r"C:\App\app.exe"));
     }
 

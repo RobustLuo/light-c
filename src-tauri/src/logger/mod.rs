@@ -448,8 +448,7 @@ pub fn open_logs_folder(app_data_dir: &Path) -> Result<(), String> {
     let log_path = app_data_dir.join("logs");
 
     if !log_path.exists() {
-        std::fs::create_dir_all(&log_path)
-            .map_err(|e| format!("创建日志目录失败: {}", e))?;
+        std::fs::create_dir_all(&log_path).map_err(|e| format!("创建日志目录失败: {}", e))?;
     }
 
     #[cfg(target_os = "windows")]
@@ -487,9 +486,7 @@ pub fn get_cleanup_history(app_data_dir: &Path) -> Result<Vec<CleanupHistorySumm
             let path = entry.path();
             if path.extension().map(|ext| ext == "json").unwrap_or(false) {
                 if let Ok(content) = std::fs::read_to_string(&path) {
-                    if let Ok(session) =
-                        serde_json::from_str::<CleanupSession>(&content)
-                    {
+                    if let Ok(session) = serde_json::from_str::<CleanupSession>(&content) {
                         history.push(CleanupHistorySummary {
                             filename: path
                                 .file_name()

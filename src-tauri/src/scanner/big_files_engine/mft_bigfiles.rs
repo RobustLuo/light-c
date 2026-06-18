@@ -82,9 +82,15 @@ pub fn scan_top_files_via_mft(
     mft_core::close_volume(h_device);
     let entries = enumerate_result?;
     let t1 = Instant::now();
-    flog!("[MFT-BigFiles] Step1: {} 条, {:.1}s", entries.len(), t1.duration_since(t0).as_secs_f32());
+    flog!(
+        "[MFT-BigFiles] Step1: {} 条, {:.1}s",
+        entries.len(),
+        t1.duration_since(t0).as_secs_f32()
+    );
 
-    if entries.is_empty() { return Err("USN 空".into()); }
+    if entries.is_empty() {
+        return Err("USN 空".into());
+    }
 
     // Step 2: 顺序读取 $MFT，并直接在读取过程中维护一个稍大的 TopN 候选池。
     // 先不重建全盘路径，可以避开几十万条路径字符串分配，最后只给候选文件解析路径。
@@ -100,14 +106,25 @@ pub fn scan_top_files_via_mft(
         }
     })?;
     let t2 = Instant::now();
-    flog!("[MFT-BigFiles] Step2: {} 个候选, {:.1}s", candidates.len(), t2.duration_since(t1).as_secs_f32());
+    flog!(
+        "[MFT-BigFiles] Step2: {} 个候选, {:.1}s",
+        candidates.len(),
+        t2.duration_since(t1).as_secs_f32()
+    );
 
     // Step 3: 只给候选文件重建路径，再做系统目录过滤和最终 TopN。
     flog!("[MFT-BigFiles] Step3 候选路径重建...");
-    let candidate_ids: HashSet<u64> = candidates.iter().map(|candidate| candidate.mft_id).collect();
+    let candidate_ids: HashSet<u64> = candidates
+        .iter()
+        .map(|candidate| candidate.mft_id)
+        .collect();
     let paths = mft_core::rebuild_paths_for_ids(&entries, drive_letter, &candidate_ids);
     let t3 = Instant::now();
-    flog!("[MFT-BigFiles] Step3 paths: {} 个, {:.1}s", paths.len(), t3.duration_since(t2).as_secs_f32());
+    flog!(
+        "[MFT-BigFiles] Step3 paths: {} 个, {:.1}s",
+        paths.len(),
+        t3.duration_since(t2).as_secs_f32()
+    );
 
     // Step 4: BinaryHeap Top-N
     let mut heap: BinaryHeap<Reverse<(u64, u64)>> = BinaryHeap::new();
@@ -123,7 +140,9 @@ pub fn scan_top_files_via_mft(
         }
 
         heap.push(Reverse((candidate.size, candidate.mft_id)));
-        if heap.len() > top_n { heap.pop(); }
+        if heap.len() > top_n {
+            heap.pop();
+        }
     }
 
     // Step 5: risk/source
@@ -138,7 +157,9 @@ pub fn scan_top_files_via_mft(
         .into_iter()
         .filter_map(|Reverse((_, mft_id))| {
             let path = paths.get(&mft_id)?;
-            let candidate = candidates.iter().find(|candidate| candidate.mft_id == mft_id)?;
+            let candidate = candidates
+                .iter()
+                .find(|candidate| candidate.mft_id == mft_id)?;
             Some(LargeFileEntry {
                 path: path.clone(),
                 size: candidate.size,
@@ -151,10 +172,18 @@ pub fn scan_top_files_via_mft(
     results.sort_by(|a, b| b.size.cmp(&a.size));
 
     let t4 = Instant::now();
-    flog!("[MFT-BigFiles] ===== 完成: Top-{}, 总 {:.1}s =====", results.len(), t4.duration_since(t0).as_secs_f32());
-    flog!("[MFT-BigFiles] 枚举={:.1}s, MFT大小={:.1}s, 候选路径={:.1}s, TopN={:.1}s",
-        t1.duration_since(t0).as_secs_f32(), t2.duration_since(t1).as_secs_f32(),
-        t3.duration_since(t2).as_secs_f32(), t4.duration_since(t3).as_secs_f32());
+    flog!(
+        "[MFT-BigFiles] ===== 完成: Top-{}, 总 {:.1}s =====",
+        results.len(),
+        t4.duration_since(t0).as_secs_f32()
+    );
+    flog!(
+        "[MFT-BigFiles] 枚举={:.1}s, MFT大小={:.1}s, 候选路径={:.1}s, TopN={:.1}s",
+        t1.duration_since(t0).as_secs_f32(),
+        t2.duration_since(t1).as_secs_f32(),
+        t3.duration_since(t2).as_secs_f32(),
+        t4.duration_since(t3).as_secs_f32()
+    );
 
     progress_cb(MftBigFileProgress {
         stage: "summary".to_string(),

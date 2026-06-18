@@ -48,10 +48,13 @@ pub async fn scan_disk_growth(
     crate::disk_growth::reset_disk_growth_cancelled();
 
     let result = tokio::task::spawn_blocking(move || {
-        crate::disk_growth::scan_and_analyze_system_drive_with_progress(&|progress| {
-            // 扫描发生在阻塞线程里，通过事件把阶段进度送回前端，避免 IPC 长时间“无声”等待。
-            let _ = app_handle.emit("disk-growth:progress", &progress);
-        }, max_change_entries)
+        crate::disk_growth::scan_and_analyze_system_drive_with_progress(
+            &|progress| {
+                // 扫描发生在阻塞线程里，通过事件把阶段进度送回前端，避免 IPC 长时间“无声”等待。
+                let _ = app_handle.emit("disk-growth:progress", &progress);
+            },
+            max_change_entries,
+        )
     })
     .await
     .map_err(|error| format!("全盘分析任务执行失败: {}", error))??;
