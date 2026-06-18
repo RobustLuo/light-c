@@ -21,7 +21,7 @@ pub fn set_data_directory(path: String) -> Result<String, String> {
     ))
 }
 
-/// 清空本地数据（安装历史缓存 + 清理日志）
+/// 清空本地数据（安装历史缓存 + 清理日志 + C 盘全盘分析快照）
 #[tauri::command]
 pub fn clear_local_data() -> Result<(usize, u64), String> {
     crate::data_dir::clear_local_data()
@@ -29,9 +29,7 @@ pub fn clear_local_data() -> Result<(usize, u64), String> {
 
 /// 打开系统文件夹选择对话框
 #[tauri::command]
-pub async fn pick_folder_dialog(
-    app: tauri::AppHandle,
-) -> Result<Option<String>, String> {
+pub async fn pick_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
 
     let result = app

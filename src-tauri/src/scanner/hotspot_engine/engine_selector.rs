@@ -47,7 +47,11 @@ pub fn detect_backend(drive_letter: char) -> HotspotBackend {
             "[引擎选择] 管理员: {}, NTFS: {} → {}",
             elevated,
             ntfs,
-            if elevated && ntfs { "MFT 直读" } else { "常规遍历" }
+            if elevated && ntfs {
+                "MFT 直读"
+            } else {
+                "常规遍历"
+            }
         );
         if elevated && ntfs {
             return HotspotBackend::Mft;
@@ -78,17 +82,11 @@ pub fn scan_full_drive(
             info!("[引擎选择] 使用 MFT 直读引擎扫描 {}:", drive_letter);
             match super::mft_scanner::scan_via_mft(drive_letter, &progress_cb) {
                 Ok(map) => {
-                    info!(
-                        "[引擎选择] MFT 扫描成功，{} 个目录",
-                        map.len()
-                    );
+                    info!("[引擎选择] MFT 扫描成功，{} 个目录", map.len());
                     (map, HotspotBackend::Mft)
                 }
                 Err(e) => {
-                    warn!(
-                        "[引擎选择] MFT 扫描失败，自动降级到 jwalk: {}",
-                        e
-                    );
+                    warn!("[引擎选择] MFT 扫描失败，自动降级到 jwalk: {}", e);
                     let (_, map) = super::fallback_scanner::aggregate_ancestor_stats(
                         root,
                         max_depth,

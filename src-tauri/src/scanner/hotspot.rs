@@ -237,9 +237,7 @@ const HEAVY_SKIP_DIRS: &[&str] = &[
 pub(crate) fn is_heavy_system_dir(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
-        .map(|name| {
-            HEAVY_SKIP_DIRS.iter().any(|d| name.eq_ignore_ascii_case(d))
-        })
+        .map(|name| HEAVY_SKIP_DIRS.iter().any(|d| name.eq_ignore_ascii_case(d)))
         .unwrap_or(false)
 }
 
@@ -263,7 +261,9 @@ fn is_noise_directory(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
         .map(|name| {
-            NOISE_DIRECTORIES.iter().any(|d| name.eq_ignore_ascii_case(d))
+            NOISE_DIRECTORIES
+                .iter()
+                .any(|d| name.eq_ignore_ascii_case(d))
         })
         .unwrap_or(false)
 }
@@ -289,7 +289,11 @@ fn is_hidden_name(name: &str) -> bool {
 
 /// Fast 模式文件名过滤（不调用 metadata()，避免 Win11 Defender IO 拦截）
 fn is_hidden_by_name(entry: &walkdir::DirEntry) -> bool {
-    entry.file_name().to_str().map(|n| is_hidden_name(n)).unwrap_or(false)
+    entry
+        .file_name()
+        .to_str()
+        .map(|n| is_hidden_name(n))
+        .unwrap_or(false)
 }
 
 /// 基于 Path 的隐藏判断（用于 jwalk 的 process_read_dir 回调，不依赖 DirEntry）
@@ -341,7 +345,6 @@ impl ScanAccuracyMode {
             ScanAccuracyMode::Accurate => true,
         }
     }
-
 }
 
 // ============================================================================
@@ -430,10 +433,7 @@ impl HotspotScanner {
 
     /// 执行扫描（带实时进度通知）
     /// 前端通过监听 `hotspot-scan:progress` 事件展示进度条
-    pub fn scan_with_ui(
-        &self,
-        app_handle: &tauri::AppHandle,
-    ) -> Result<HotspotScanResult, String> {
+    pub fn scan_with_ui(&self, app_handle: &tauri::AppHandle) -> Result<HotspotScanResult, String> {
         if self.full_scan {
             self.scan_full_disk(Some(app_handle))
         } else {
@@ -457,8 +457,13 @@ impl HotspotScanner {
         let cancel_flag = AtomicBool::new(false); // AppData 扫描不支持取消
 
         // 单次 jwalk 遍历 AppData，祖先聚合所有层级
-        let (root_stats, ancestor_map) =
-            aggregate_ancestor_stats(&appdata_path, max_depth, track_modified, &cancel_flag, true /* AppData 扫描无系统目录 */);
+        let (root_stats, ancestor_map) = aggregate_ancestor_stats(
+            &appdata_path,
+            max_depth,
+            track_modified,
+            &cancel_flag,
+            true, /* AppData 扫描无系统目录 */
+        );
 
         let scanned_total_size = root_stats.total_size;
 
@@ -486,9 +491,7 @@ impl HotspotScanner {
 
         // 只保留 depth=1 的条目作为顶级结果，递归构建子树
         let mut top_entries: Vec<HotspotEntry> = Vec::new();
-        for (dir_path, dir_stats, depth) in candidate_pairs.iter()
-            .filter(|(_, _, d)| *d == 1)
-        {
+        for (dir_path, dir_stats, depth) in candidate_pairs.iter().filter(|(_, _, d)| *d == 1) {
             let mut entry = Self::build_entry(dir_path, dir_stats, *depth as u8, false);
             // 多给一层深度，让末级条目也能构建子节点
             entry.children = Self::build_children_from_pairs(
@@ -596,7 +599,8 @@ impl HotspotScanner {
                                     progress.processed,
                                     0,
                                     total_first_level,
-                                    (progress.processed / 50000).min(total_first_level.saturating_sub(1)),
+                                    (progress.processed / 50000)
+                                        .min(total_first_level.saturating_sub(1)),
                                     &start_time,
                                     progress.stage_elapsed_ms,
                                 ),
@@ -624,8 +628,7 @@ impl HotspotScanner {
                         let depth = calculate_relative_depth(&c_drive, path);
                         if depth > 0 && depth <= self.max_display_depth {
                             total_scanned.fetch_add(1, Ordering::Relaxed);
-                            all_entries
-                                .push(Self::build_entry(path, stats, depth as u8, true));
+                            all_entries.push(Self::build_entry(path, stats, depth as u8, true));
                         }
                     }
                 }
@@ -705,7 +708,10 @@ impl HotspotScanner {
                                 if depth <= dir_depth + self.max_display_depth {
                                     total_scanned.fetch_add(1, Ordering::Relaxed);
                                     all_entries.push(Self::build_entry(
-                                        path, stats, depth as u8, true,
+                                        path,
+                                        stats,
+                                        depth as u8,
+                                        true,
                                     ));
                                 }
                             }
@@ -808,12 +814,8 @@ impl HotspotScanner {
             let child_max_depth = entry
                 .depth
                 .saturating_add(self.max_display_depth.saturating_sub(1) as u8);
-            entry.children = build_tree_children_from_index(
-                &entry_path,
-                child_max_depth,
-                &child_index,
-                true,
-            );
+            entry.children =
+                build_tree_children_from_index(&entry_path, child_max_depth, &child_index, true);
         }
 
         let scan_duration_ms = start_time.elapsed().as_millis() as u64;
@@ -893,11 +895,15 @@ impl HotspotScanner {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.filter_map(|e| e.ok()) {
                 let sub_path = entry.path();
-                if sub_path.is_dir() && !Self::should_skip_scan(&sub_path) && !is_heavy_system_dir(&sub_path) {
+                if sub_path.is_dir()
+                    && !Self::should_skip_scan(&sub_path)
+                    && !is_heavy_system_dir(&sub_path)
+                {
                     // 优先从缓存获取
-                    let sub_stats_opt = stats_cache.get(&sub_path).cloned().or_else(|| {
-                        Self::calculate_folder_stats(&sub_path, 4, true)
-                    });
+                    let sub_stats_opt = stats_cache
+                        .get(&sub_path)
+                        .cloned()
+                        .or_else(|| Self::calculate_folder_stats(&sub_path, 4, true));
 
                     if let Some(sub_stats) = sub_stats_opt {
                         if sub_stats.total_size >= MIN_SIZE_THRESHOLD {
@@ -923,7 +929,8 @@ impl HotspotScanner {
                     stats_cache,
                 );
 
-                let mut entry = Self::build_entry(&sub_path, &sub_stats, current_depth, is_full_scan);
+                let mut entry =
+                    Self::build_entry(&sub_path, &sub_stats, current_depth, is_full_scan);
                 entry.children = children;
                 entry
             })
@@ -957,14 +964,18 @@ impl HotspotScanner {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.filter_map(|e| e.ok()) {
                 let sub_path = entry.path();
-                if !sub_path.is_dir() || Self::should_skip_scan(&sub_path) || is_heavy_system_dir(&sub_path) {
+                if !sub_path.is_dir()
+                    || Self::should_skip_scan(&sub_path)
+                    || is_heavy_system_dir(&sub_path)
+                {
                     continue;
                 }
 
                 if let Some(stats) = cache.get(&sub_path) {
                     if stats.total_size >= MIN_SIZE_THRESHOLD {
                         let depth = calculate_relative_depth(root, &sub_path);
-                        let mut child_entry = Self::build_entry(&sub_path, stats, depth as u8, true);
+                        let mut child_entry =
+                            Self::build_entry(&sub_path, stats, depth as u8, true);
                         child_entry.children = Vec::new();
                         children.push(child_entry);
                     }
@@ -973,10 +984,7 @@ impl HotspotScanner {
         }
 
         children.sort_by(|a, b| b.total_size.cmp(&a.total_size));
-        children
-            .into_iter()
-            .take(DRILL_DOWN_TOP_CHILDREN)
-            .collect()
+        children.into_iter().take(DRILL_DOWN_TOP_CHILDREN).collect()
     }
 
     // ========================================================================
@@ -1136,7 +1144,11 @@ impl HotspotScanner {
     /// # 参数
     /// - `max_depth`: WalkDir 递归深度上限
     /// - `include_modified`: 是否收集最后修改时间（Fast 模式跳过以减少 IO）
-    fn calculate_folder_stats(path: &Path, max_depth: u8, include_modified: bool) -> Option<FolderStats> {
+    fn calculate_folder_stats(
+        path: &Path,
+        max_depth: u8,
+        include_modified: bool,
+    ) -> Option<FolderStats> {
         let mut total_size: u64 = 0;
         let mut file_count: usize = 0;
         let mut last_modified: i64 = 0;
@@ -1145,9 +1157,7 @@ impl HotspotScanner {
             .follow_links(false)
             .max_depth(max_depth as usize)
             .into_iter()
-            .filter_entry(|e| {
-                !Self::is_hidden_system_entry(e) && !is_heavy_system_dir(e.path())
-            });
+            .filter_entry(|e| !Self::is_hidden_system_entry(e) && !is_heavy_system_dir(e.path()));
 
         for entry in walker {
             match entry {
@@ -1188,7 +1198,12 @@ impl HotspotScanner {
     /// 判断是否为隐藏的系统条目
     fn is_hidden_system_entry(entry: &walkdir::DirEntry) -> bool {
         // 先检查名称（避免不必要的 metadata() 调用）
-        if entry.file_name().to_str().map(|n| is_hidden_name(n)).unwrap_or(false) {
+        if entry
+            .file_name()
+            .to_str()
+            .map(|n| is_hidden_name(n))
+            .unwrap_or(false)
+        {
             return true;
         }
 
@@ -1218,7 +1233,12 @@ impl HotspotScanner {
 
     /// 核心构建器：将目录路径和统计信息统一构造为 HotspotEntry
     /// 消除 scan_appdata / scan_full_disk / drill_down / scan_path_direct 中的重复代码
-    fn build_entry(path: &Path, stats: &FolderStats, depth: u8, is_full_scan: bool) -> HotspotEntry {
+    fn build_entry(
+        path: &Path,
+        stats: &FolderStats,
+        depth: u8,
+        is_full_scan: bool,
+    ) -> HotspotEntry {
         let path_str = path.to_string_lossy().to_string();
         let folder_name = path
             .file_name()
@@ -1262,9 +1282,7 @@ impl HotspotScanner {
         // 筛选直接子目录：path.parent() == parent_path 且 depth == current_depth
         let mut children: Vec<HotspotEntry> = candidate_pairs
             .iter()
-            .filter(|(p, _, d)| {
-                *d == current_depth && p.parent() == Some(parent_path)
-            })
+            .filter(|(p, _, d)| *d == current_depth && p.parent() == Some(parent_path))
             .map(|(path, stats, depth)| {
                 let mut child = Self::build_entry(path, stats, *depth as u8, false);
                 child.children = Self::build_children_from_pairs(
@@ -1467,9 +1485,7 @@ fn flatten_hotspots(
     // 系统目录过滤关闭时保留噪音目录，便于和 WizTree 的全盘排名语义对齐。
     let mut candidates: BinaryHeap<SizeOrd> = all_entries
         .into_iter()
-        .filter(|e| {
-            !ignore_system_dirs || !is_noise_directory(&PathBuf::from(&e.path))
-        })
+        .filter(|e| !ignore_system_dirs || !is_noise_directory(&PathBuf::from(&e.path)))
         .map(SizeOrd)
         .collect();
 
@@ -1538,7 +1554,7 @@ impl HotspotScanner {
         let cancel_flag = AtomicBool::new(false);
         let (_root_stats, ancestor_map) = aggregate_ancestor_stats(
             &target,
-            4,   // max_depth
+            4,     // max_depth
             false, // track_modified (快速模式)
             &cancel_flag,
             true, // 路径钻取：此上下文无系统目录

@@ -1371,7 +1371,7 @@ impl SocialScanner {
         let base_paths = vec![
             PathBuf::from(format!("{}\\WXWork", self.documents_dir)),
             PathBuf::from(format!("{}\\WXWork", self.default_documents)),
-            PathBuf::from(format!("{}\\WXWork", self.appdata)),       // Roaming
+            PathBuf::from(format!("{}\\WXWork", self.appdata)), // Roaming
             PathBuf::from(format!("{}\\WXWork", self.local_appdata)), // Local
         ];
 

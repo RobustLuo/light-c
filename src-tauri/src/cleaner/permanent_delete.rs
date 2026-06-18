@@ -299,11 +299,13 @@ impl PermanentDeleteEngine {
                 // 检查路径中是否包含 \Desktop\ 或以 \Desktop 结尾
                 // 防止 \Desktop 误匹配 \DesktopApp
                 let comp_with_sep = format!("{}\\", protected_lower);
-                if path_lower.starts_with(&format!("{}\\", protected_lower.trim_start_matches('\\')))
+                if path_lower
+                    .starts_with(&format!("{}\\", protected_lower.trim_start_matches('\\')))
                     || path_lower.contains(&comp_with_sep)
                     || path_lower.ends_with(&protected_lower)
                 {
-                    let reason = format!("路径包含受保护目录: {}", protected.trim_start_matches('\\'));
+                    let reason =
+                        format!("路径包含受保护目录: {}", protected.trim_start_matches('\\'));
                     return Some(reason);
                 }
             }

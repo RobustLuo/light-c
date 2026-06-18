@@ -10,7 +10,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use jwalk::WalkDir as JWalkDir;
 
-use crate::scanner::hotspot::{is_heavy_system_dir, is_hidden_by_path, FolderStats, HotspotScanner};
+use crate::scanner::hotspot::{
+    is_heavy_system_dir, is_hidden_by_path, FolderStats, HotspotScanner,
+};
 
 /// jwalk 并行遍历 + 祖先聚合（核心扫描引擎）
 ///
@@ -44,11 +46,14 @@ pub fn aggregate_ancestor_stats(
             // 预过滤：阻止 jwalk 进入巨型系统目录和隐藏目录
             // 当用户关闭系统目录过滤时，WinSxS/DriverStore 等也允许进入扫描
             children.retain(|dir_entry_result| {
-                dir_entry_result.as_ref().map(|e| {
-                    let p = e.path();
-                    let skip_heavy = ignore_system_dirs && is_heavy_system_dir(&p);
-                    !skip_heavy && !is_hidden_by_path(&p)
-                }).unwrap_or(false) // 读取失败的条目无法进入，安全移除
+                dir_entry_result
+                    .as_ref()
+                    .map(|e| {
+                        let p = e.path();
+                        let skip_heavy = ignore_system_dirs && is_heavy_system_dir(&p);
+                        !skip_heavy && !is_hidden_by_path(&p)
+                    })
+                    .unwrap_or(false) // 读取失败的条目无法进入，安全移除
             });
         })
         .into_iter();

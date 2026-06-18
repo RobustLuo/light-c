@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Settings, MessageSquare, Info, Sun, Moon, Monitor, ExternalLink, RefreshCw, CheckCircle, BookOpen, Shield, AlertTriangle, Cpu, HardDrive, Monitor as MonitorIcon, User, Clock, Zap, FileBox, MessageCircle, Layers, Package, Database, Code2, FolderOpen, History, ChevronRight, MonitorCog, Coffee, Copy, MousePointerClick, ShieldCheck, Rocket, HelpCircle, ClipboardList, ShieldAlert, Navigation, Trash2, SlidersHorizontal, Download } from 'lucide-react';
 import { Select, type SelectOption } from './ui/Select';
+import { ConfirmDialog } from './ConfirmDialog';
 
 // 赞赏码图片
 import wechatQr from '../assets/r_wechat_qr.jpg';
@@ -144,6 +145,7 @@ function GeneralSettings({ mode, setMode }: { mode: ThemeMode; setMode: (mode: T
   const [dataDir, setDataDir] = useState('');
   const [isChangingDir, setIsChangingDir] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [clearConfirmStep, setClearConfirmStep] = useState<0 | 1 | 2>(0);
 
   // 加载当前数据目录
   useEffect(() => {
@@ -175,9 +177,14 @@ function GeneralSettings({ mode, setMode }: { mode: ThemeMode; setMode: (mode: T
   };
 
   // 清空本地数据
-  const handleClearData = async () => {
-    if (!window.confirm('确定要清空所有本地数据吗？\n\n这将删除：\n• 安装历史缓存\n• 所有清理日志记录\n\n此操作不可撤销。')) return;
+  const handleClearData = () => {
+    // Tauri WebView 下原生 window.confirm 偶发不显示，改用项目内确认弹窗确保危险操作一定被用户看见。
+    setClearConfirmStep(1);
+  };
+
+  const executeClearData = async () => {
     try {
+      setClearConfirmStep(0);
       setIsClearing(true);
       const [fileCount, freedBytes] = await clearLocalData();
       showToast({
@@ -367,6 +374,30 @@ function GeneralSettings({ mode, setMode }: { mode: ThemeMode; setMode: (mode: T
         </div>
       </div>
 
+      <ConfirmDialog
+        isOpen={clearConfirmStep === 1}
+        title="清空本地数据？"
+        description="这会删除安装历史缓存、所有清理日志记录，以及 C 盘全盘分析快照。"
+        warning="此操作不可撤销；快照清理后不会损坏功能，但会失去现有对比基线。"
+        confirmText="继续"
+        cancelText="取消"
+        isDanger
+        onCancel={() => setClearConfirmStep(0)}
+        onConfirm={() => setClearConfirmStep(2)}
+      />
+
+      <ConfirmDialog
+        isOpen={clearConfirmStep === 2}
+        title="再次确认清空？"
+        description="清空 C 盘全盘分析快照后，下一次扫描会重新建立基线，第二次扫描才会重新显示变化对比。"
+        warning="如果你还需要保留当前增长对比记录，请先取消操作。"
+        confirmText="确认清空"
+        cancelText="取消"
+        isDanger
+        onCancel={() => setClearConfirmStep(0)}
+        onConfirm={executeClearData}
+      />
+
       {/* 系统快捷工具 */}
       <div className="space-y-3 pt-2 border-t border-[var(--border-color)]">
         <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-2">
@@ -553,7 +584,7 @@ function FeatureSettings() {
             <div>
               <p className="text-sm font-medium text-[var(--text-primary)]">最多展示变化目录</p>
               <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
-                限制与上次快照对比后返回的变化目录数量。数值越大，前端渲染和排序压力越高，建议保持 300 以内。
+                限制与上次快照对比后返回的变化目录数量。数值越大，软件界面渲染和排序压力越高，建议保持 300 以内。
               </p>
             </div>
             <span className="text-sm font-semibold text-[var(--brand-green)] shrink-0">
@@ -583,6 +614,21 @@ function FeatureSettings() {
               <p className="text-sm font-medium text-[var(--text-primary)]">变化明细</p>
               <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
                 点击变化量可打开明细弹窗，左侧展示当前目录的下一级变化目录，右侧展示当前目录内变化文件。明细通过后端接口按需分页加载，每次最多 200 条，并使用虚拟列表渲染，避免大目录一次性渲染造成卡顿。
+              </p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
+                快照最多保留 3 组；最近两组用于变化对比，额外一组用于异常排查和兜底，超过后会自动清理旧快照及对应文件分片。
+              </p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-[var(--text-primary)]">扫描速度</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
+                全盘分析主要受文件数量、硬盘类型和系统负载影响。M.2 SSD 通常最快，SATA SSD 次之，机械硬盘会明显变慢；C 盘容量越大不一定越慢，真正决定耗时的是文件记录数量、$MFT 体积、metadata 回退数量和安全软件实时扫描。
+              </p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-[var(--text-primary)]">首次 MFT 预热</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
+                应用启动后第一次 MFT 扫描可能比后续扫描慢十几秒，这是 Windows 文件系统缓存、$MFT 数据和安全软件检查尚未预热导致的正常现象。完成一次 MFT 扫描后，大目录、大文件和全盘分析等模块通常都会明显变快。
               </p>
             </div>
             <div>
@@ -769,6 +815,14 @@ function GuideSettings() {
             <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6 mt-2">
               <span className="text-[var(--brand-green)] font-medium">变化定位：</span>
               每次扫描会与上次快照对比，计算 C 盘净新增/净减少空间，并按变化量列出对应目录、当前大小、变化级别和原因提示。
+            </p>
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6 mt-2">
+              <span className="text-[var(--brand-green)] font-medium">性能边界：</span>
+              扫描速度主要取决于文件数量、$MFT 体积、硬盘类型和安全软件实时扫描。容量几个 TB 的 C 盘也能工作，但文件记录越多，MFT 枚举、路径重建和快照分片写入越耗时。
+            </p>
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6 mt-2">
+              <span className="text-[var(--brand-green)] font-medium">首次预热：</span>
+              应用启动后第一次 MFT 扫描可能较慢，属于 Windows 文件系统缓存尚未预热的正常现象；完成一次 MFT 扫描后，同类模块通常会明显变快。
             </p>
             <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6 mt-2">
               <span className="text-[var(--brand-green)] font-medium">只做分析：</span>

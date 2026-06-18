@@ -107,11 +107,19 @@ pub fn scan(window: &Window, top_n: usize) -> Result<Vec<LargeFileEntry>, String
                         "管理员:{}, NTFS:{}, 引擎:{}",
                         if is_admin { "是" } else { "否" },
                         if is_ntfs_drive { "是" } else { "否" },
-                        if is_admin && is_ntfs_drive { "MFT" } else { "常规" }
+                        if is_admin && is_ntfs_drive {
+                            "MFT"
+                        } else {
+                            "常规"
+                        }
                     ),
                     scanned_count: 0,
                     found_count: 0,
-                    backend: if is_admin && is_ntfs_drive { "mft".into() } else { "walkdir".into() },
+                    backend: if is_admin && is_ntfs_drive {
+                        "mft".into()
+                    } else {
+                        "walkdir".into()
+                    },
                     stage: "detect".into(),
                     message: "正在检测扫描引擎".into(),
                     elapsed_ms: 0,
@@ -150,10 +158,7 @@ pub fn scan(window: &Window, top_n: usize) -> Result<Vec<LargeFileEntry>, String
                     },
                 ) {
                     Ok(results) if !results.is_empty() => {
-                        log::info!(
-                            "[BigFiles] MFT 全量扫描完成，返回 {} 个文件",
-                            results.len()
-                        );
+                        log::info!("[BigFiles] MFT 全量扫描完成，返回 {} 个文件", results.len());
                         return Ok(results);
                     }
                     Ok(_empty) => {
@@ -362,8 +367,8 @@ pub(crate) fn compute_file_risk_level(path: &str) -> u8 {
 
     // 3 — 中等风险
     let data_exts = [
-        "db", "sqlite", "mdf", "ldf", "accdb", "mdb", "vmdk", "vdi", "vhd", "vhdx", "doc",
-        "docx", "xls", "xlsx", "ppt", "pptx", "pdf",
+        "db", "sqlite", "mdf", "ldf", "accdb", "mdb", "vmdk", "vdi", "vhd", "vhdx", "doc", "docx",
+        "xls", "xlsx", "ppt", "pptx", "pdf",
     ];
     if data_exts.contains(&ext) {
         return 3;
@@ -415,7 +420,11 @@ pub(crate) fn compute_source_label(path: &str) -> String {
     if ["db", "sqlite", "mdf", "ldf", "accdb", "mdb"].contains(&ext) {
         return "数据库文件".to_string();
     }
-    if ["zip", "rar", "7z", "tar", "gz", "bz2", "xz", "zst", "cab", "tar.gz"].contains(&ext) {
+    if [
+        "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "zst", "cab", "tar.gz",
+    ]
+    .contains(&ext)
+    {
         return "压缩包".to_string();
     }
     if ext == "log" {

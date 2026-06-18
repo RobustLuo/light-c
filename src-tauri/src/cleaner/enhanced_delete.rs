@@ -92,11 +92,7 @@ pub(crate) mod windows_api {
         ///
         /// # 返回值
         /// S_OK (0) 表示成功，否则为 HRESULT 错误码
-        pub fn SHEmptyRecycleBinW(
-            hwnd: *const u16,
-            pszRootPath: *const u16,
-            dwFlags: u32,
-        ) -> i32;
+        pub fn SHEmptyRecycleBinW(hwnd: *const u16, pszRootPath: *const u16, dwFlags: u32) -> i32;
     }
 
     /// 将 Rust 字符串转换为 Windows 宽字符串
@@ -427,7 +423,7 @@ impl EnhancedDeleteEngine {
 
         Self {
             cluster_size,
-            enable_reboot_delete: true,  // 默认启用，处理被占用的文件
+            enable_reboot_delete: true,   // 默认启用，处理被占用的文件
             enable_take_ownership: false, // 默认禁用，icacls 调用很慢
         }
     }
@@ -479,7 +475,8 @@ impl EnhancedDeleteEngine {
                 recycle_paths.len()
             );
 
-            let shell_result = windows_api::empty_recycle_bin(None /* 清空所有驱动器 */);
+            let shell_result =
+                windows_api::empty_recycle_bin(None /* 清空所有驱动器 */);
 
             // 清空前先记录文件大小（Shell API 成功后文件即消失）
             let mut path_sizes: Vec<(&String, u64, u64)> = Vec::new();

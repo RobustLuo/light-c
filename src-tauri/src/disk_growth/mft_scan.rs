@@ -83,10 +83,10 @@ struct FileRecord {
 }
 
 #[derive(Debug, Clone)]
-struct FileSizeRecord {
-    parent_id: u64,
-    path: String,
-    size: u64,
+pub(crate) struct FileSizeRecord {
+    pub(crate) parent_id: u64,
+    pub(crate) path: String,
+    pub(crate) size: u64,
 }
 
 struct FileSizeCollection {
@@ -144,10 +144,11 @@ pub struct DiskGrowthScanProgress {
     pub elapsed_ms: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct FullDiskScanResult {
     pub entries: Vec<DirSizeEntry>,
-    pub file_entries: Vec<FileSnapshotEntry>,
+    // 文件级明细只在后端写快照分片时使用，不进入前端响应，避免超大盘下复制出第二份路径列表。
+    pub(crate) file_records: Vec<FileSizeRecord>,
     pub total_size: u64,
     pub total_files_scanned: usize,
     pub scan_duration_ms: u64,
@@ -244,19 +245,13 @@ where
         .map(|record| record.size)
         .sum();
     push_phase_duration(&mut phase_durations, "aggregate", phase_start);
+    let total_files_scanned = file_size_collection.records.len();
 
     Ok(FullDiskScanResult {
         entries,
-        file_entries: file_size_collection
-            .records
-            .iter()
-            .map(|record| FileSnapshotEntry {
-                path: record.path.clone(),
-                size: record.size,
-            })
-            .collect(),
+        file_records: file_size_collection.records,
         total_size,
-        total_files_scanned: file_size_collection.records.len(),
+        total_files_scanned,
         scan_duration_ms: start.elapsed().as_millis() as u64,
         root_path: drive_root,
         backend: "mft".to_string(),
@@ -685,13 +680,12 @@ impl NtfsFileSizeReader {
             .ok_or_else(|| "NTFS 引导扇区缺少 sectors_per_cluster".to_string())?
             as usize;
         let cluster_size = (bytes_per_sector * sectors_per_cluster) as u64;
-        let mft_lcn = read_i64(&boot_sector, 48)
-            .ok_or_else(|| "NTFS 引导扇区缺少 MFT LCN".to_string())?;
+        let mft_lcn =
+            read_i64(&boot_sector, 48).ok_or_else(|| "NTFS 引导扇区缺少 MFT LCN".to_string())?;
         let file_record_size = decode_file_record_size(
             *boot_sector
                 .get(64)
-                .ok_or_else(|| "NTFS 引导扇区缺少 FILE record 大小".to_string())?
-                as i8,
+                .ok_or_else(|| "NTFS 引导扇区缺少 FILE record 大小".to_string())? as i8,
             cluster_size,
         );
 
@@ -801,7 +795,8 @@ impl NtfsFileSizeReader {
                 bytes_read_in_run += aligned_read_len as u64;
             }
 
-            next_record_id += records_in_run.saturating_sub(bytes_read_in_run / self.file_record_size as u64);
+            next_record_id +=
+                records_in_run.saturating_sub(bytes_read_in_run / self.file_record_size as u64);
         }
 
         size_by_mft_id

@@ -86,11 +86,7 @@ pub async fn get_status() -> SystemSlimStatus {
     );
 
     let items = vec![hibernation, winsxs, pagefile];
-    let total_reclaimable = items
-        .iter()
-        .filter(|i| i.enabled)
-        .map(|i| i.size)
-        .sum();
+    let total_reclaimable = items.iter().filter(|i| i.enabled).map(|i| i.size).sum();
 
     SystemSlimStatus {
         is_admin,
@@ -135,10 +131,7 @@ fn check_hibernation_enabled() -> bool {
 
         // 主检测：注册表 HibernateEnabled 值（powercfg -h 的权威来源）
         if let Ok(hklm) = RegKey::predef(HKEY_LOCAL_MACHINE)
-            .open_subkey_with_flags(
-                r"SYSTEM\CurrentControlSet\Control\Power",
-                KEY_READ,
-            )
+            .open_subkey_with_flags(r"SYSTEM\CurrentControlSet\Control\Power", KEY_READ)
         {
             let value: u32 = hklm.get_value("HibernateEnabled").unwrap_or(0);
             if value == 1 {
@@ -205,9 +198,11 @@ async fn analyze_winsxs_async() -> u64 {
             WINSXS_ANALYZE_RUNNING.store(false, Ordering::SeqCst);
         });
 
-        let dism_result =
-            tokio::time::timeout(std::time::Duration::from_secs(WINSXS_ANALYZE_TIMEOUT_SECS), receiver)
-                .await;
+        let dism_result = tokio::time::timeout(
+            std::time::Duration::from_secs(WINSXS_ANALYZE_TIMEOUT_SECS),
+            receiver,
+        )
+        .await;
 
         // 双重 Result：外层 timeout，中层 spawn_blocking，内层 analyze_winsxs_sync
         match dism_result {
@@ -274,10 +269,7 @@ fn analyze_winsxs_sync() -> Result<u64, String> {
         let combined = format!("{}\n{}", stdout, String::from_utf8_lossy(&output.stderr));
 
         for line in combined.lines() {
-            if line.contains("Recommended")
-                || line.contains("推荐")
-                || line.contains("cleanup")
-            {
+            if line.contains("Recommended") || line.contains("推荐") || line.contains("cleanup") {
                 if let Some(size_bytes) = parse_size_from_line(line) {
                     return Ok(size_bytes);
                 }
@@ -359,23 +351,32 @@ fn get_pagefile_status() -> SlimItemStatus {
             c_drive_paths.push(format!("{} ({})", cfg.path, format_bytes(actual_size)));
         } else {
             other_drive_size += actual_size;
-            other_drive_paths
-                .push(format!("{} ({})", cfg.path, format_bytes(actual_size)));
+            other_drive_paths.push(format!("{} ({})", cfg.path, format_bytes(actual_size)));
         }
     }
 
     let is_on_c_drive = c_drive_size > 0;
-    let total_size = if is_on_c_drive { c_drive_size } else { other_drive_size };
+    let total_size = if is_on_c_drive {
+        c_drive_size
+    } else {
+        other_drive_size
+    };
 
     // 构建描述文本
-    let description = if pagefile_configs.is_empty() || pagefile_configs.len() == 1
-        && pagefile_configs.first().map_or(false, |c| c.path.to_lowercase().starts_with("c:"))
+    let description = if pagefile_configs.is_empty()
+        || pagefile_configs.len() == 1
+            && pagefile_configs
+                .first()
+                .map_or(false, |c| c.path.to_lowercase().starts_with("c:"))
         || pagefile_configs.is_empty()
     {
         let loc_text = if pagefile_configs.is_empty() {
             "系统管理".to_string()
         } else {
-            c_drive_paths.first().cloned().unwrap_or("系统管理".to_string())
+            c_drive_paths
+                .first()
+                .cloned()
+                .unwrap_or("系统管理".to_string())
         };
         format!(
             "当前分页文件: {}。建议将虚拟内存迁移到非系统盘以释放 C 盘空间",
@@ -480,12 +481,18 @@ fn parse_pagefile_configs(raw: &str) -> Vec<PagefileConfig> {
             };
 
             let initial_size = if i + 1 < tokens.len() {
-                tokens[i + 1].trim_end_matches(',').parse::<u64>().unwrap_or(0)
+                tokens[i + 1]
+                    .trim_end_matches(',')
+                    .parse::<u64>()
+                    .unwrap_or(0)
             } else {
                 0
             };
             let max_size = if i + 2 < tokens.len() {
-                tokens[i + 2].trim_end_matches(',').parse::<u64>().unwrap_or(0)
+                tokens[i + 2]
+                    .trim_end_matches(',')
+                    .parse::<u64>()
+                    .unwrap_or(0)
             } else {
                 0
             };
@@ -696,10 +703,7 @@ fn parse_dism_progress(line: &str) -> Option<u32> {
     for (i, &b) in bytes.iter().enumerate() {
         if b.is_ascii_digit() {
             // 检查后面是否有 '%' 符号
-            let end = bytes[i..]
-                .iter()
-                .position(|&c| c == b'%')
-                .map(|p| i + p);
+            let end = bytes[i..].iter().position(|&c| c == b'%').map(|p| i + p);
             if let Some(pct_pos) = end {
                 let num_str = std::str::from_utf8(&bytes[i..pct_pos]).ok()?;
                 if let Ok(val) = num_str.parse::<f64>() {

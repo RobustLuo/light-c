@@ -208,19 +208,16 @@ impl RegistryBackup {
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
         )
         .map_err(|e| format!("写入备份文件失败: {}", e))?;
-        writeln!(
-            file,
-            "; 条目数: {}, 如需恢复请双击此文件",
-            entries.len()
-        )
-        .map_err(|e| format!("写入备份文件失败: {}", e))?;
+        writeln!(file, "; 条目数: {}, 如需恢复请双击此文件", entries.len())
+            .map_err(|e| format!("写入备份文件失败: {}", e))?;
         writeln!(file).map_err(|e| format!("写入备份文件失败: {}", e))?;
 
         for entry in entries {
             Self::export_key_via_reg_exe(&mut file, entry)?;
         }
 
-        file.flush().map_err(|e| format!("刷新备份文件失败: {}", e))?;
+        file.flush()
+            .map_err(|e| format!("刷新备份文件失败: {}", e))?;
         log::info!("注册表备份已保存: {:?}", backup_file);
 
         Ok(backup_file)
@@ -234,12 +231,7 @@ impl RegistryBackup {
         let reg_subpath = Self::to_reg_exe_format(&entry.path)?;
 
         let output = Command::new("reg")
-            .args([
-                "export",
-                &reg_subpath,
-                &temp_file.to_string_lossy(),
-                "/y",
-            ])
+            .args(["export", &reg_subpath, &temp_file.to_string_lossy(), "/y"])
             .output()
             .map_err(|e| format!("执行 reg export 失败: {}", e))?;
 
@@ -252,8 +244,7 @@ impl RegistryBackup {
                 stderr.trim()
             )
             .map_err(|e| format!("写入备份注释失败: {}", e))?;
-            writeln!(file, "[{}]", entry.path)
-                .map_err(|e| format!("写入备份路径失败: {}", e))?;
+            writeln!(file, "[{}]", entry.path).map_err(|e| format!("写入备份路径失败: {}", e))?;
             writeln!(file, "; 此条目备份失败，请手动检查: {}", entry.issue)
                 .map_err(|e| format!("写入备份注释失败: {}", e))?;
             writeln!(file).map_err(|e| format!("写入备份失败: {}", e))?;
@@ -264,8 +255,7 @@ impl RegistryBackup {
         // - 中文/日文/韩文 Windows → UTF-16 LE + BOM (\xFF\xFE)
         // - 英文 Windows → UTF-8 (无 BOM) 或 ANSI
         // 直接读 bytes 按 BOM 判断，兼容所有情况
-        let raw_bytes = fs::read(&temp_file)
-            .map_err(|e| format!("读取临时导出文件失败: {}", e))?;
+        let raw_bytes = fs::read(&temp_file).map_err(|e| format!("读取临时导出文件失败: {}", e))?;
         let content = decode_reg_export(&raw_bytes)?;
 
         // 跳过 .reg 文件头，追加内容
@@ -388,9 +378,8 @@ mod tests {
     #[test]
     fn test_to_reg_exe_format() {
         // HKCR\Applications\xxx → HKCR\Applications\xxx
-        let result = RegistryBackup::to_reg_exe_format(
-            r"HKEY_CLASSES_ROOT\Applications\notepad.exe",
-        );
+        let result =
+            RegistryBackup::to_reg_exe_format(r"HKEY_CLASSES_ROOT\Applications\notepad.exe");
         assert_eq!(result.unwrap(), r"HKCR\Applications\notepad.exe");
     }
 
