@@ -22,6 +22,27 @@ import { DashboardProvider, useDashboard, FontSizeProvider, SettingsProvider, us
 import { APP_MODULES } from './config/modules';
 import './App.css';
 
+function PageTransitionAccent({ active }: { active: boolean }) {
+  if (!active) return null;
+
+  return (
+    <motion.div
+      // 只动画一条轻量流光，不让大结果 DOM 参与复杂过渡，兼顾质感和性能。
+      className="pointer-events-none absolute inset-x-3 top-0 z-20 h-1 overflow-hidden rounded-full"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: [0, 1, 0.85, 0] }}
+      transition={{ duration: 0.56, ease: 'easeOut' }}
+    >
+      <motion.div
+        className="h-full w-2/3 rounded-full bg-gradient-to-r from-transparent via-[var(--brand-green)] to-transparent shadow-[0_0_18px_rgba(7,193,96,0.65)]"
+        initial={{ x: '-130%' }}
+        animate={{ x: '170%' }}
+        transition={{ duration: 0.56, ease: [0.22, 1, 0.36, 1] }}
+      />
+    </motion.div>
+  );
+}
+
 // ============================================================================
 // 仪表盘内容组件
 // ============================================================================
@@ -38,7 +59,7 @@ function DashboardContent() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isPageMode = settings.layoutMode === 'pages';
   const [visibleModuleId, setVisibleModuleId] = useState(settings.activeModuleId);
-  const [leavingModuleId, setLeavingModuleId] = useState<string | null>(null);
+  const [transitionModuleId, setTransitionModuleId] = useState(settings.activeModuleId);
   const visibleModuleIdRef = useRef(settings.activeModuleId);
 
   // 一键扫描：通过触发器并发启动所有模块扫描
@@ -49,24 +70,21 @@ function DashboardContent() {
   useEffect(() => {
     if (!isPageMode) {
       setVisibleModuleId(settings.activeModuleId);
+      setTransitionModuleId(settings.activeModuleId);
       visibleModuleIdRef.current = settings.activeModuleId;
-      setLeavingModuleId(null);
       return;
     }
 
     const previousModuleId = visibleModuleIdRef.current;
     if (settings.activeModuleId === previousModuleId) return;
 
-    // 页面模式下保留旧页面短暂淡出，同时让新页面淡入，避免菜单切换时出现瞬切。
+    // 页面模式下只让新页面做轻量入场动画，旧页面立即隐藏。
+    // 大目录/全盘分析这类结果 DOM 很重，如果旧页面也参与离场动画，会触发大面积合成和掉帧。
     // 切换前先回到顶部，防止从长页面切到短页面时继承旧 scrollTop，出现大段空白和多余滚动条。
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
-    setLeavingModuleId(previousModuleId);
     visibleModuleIdRef.current = settings.activeModuleId;
+    setTransitionModuleId(settings.activeModuleId);
     setVisibleModuleId(settings.activeModuleId);
-    const timer = window.setTimeout(() => {
-      setLeavingModuleId(null);
-    }, 180);
-    return () => window.clearTimeout(timer);
   }, [isPageMode, settings.activeModuleId]);
 
   useEffect(() => {
@@ -108,34 +126,34 @@ function DashboardContent() {
               {APP_MODULES.map((moduleConfig) => {
                 const ModuleComponent = moduleConfig.component;
                 const isActivePage = visibleModuleId === moduleConfig.id;
-                const isLeavingPage = leavingModuleId === moduleConfig.id;
-                const shouldShowInPageMode = isActivePage || isLeavingPage;
                 return (
                   <motion.div
                     key={moduleConfig.id}
                     data-module-id={moduleConfig.id}
                     className={
                       isPageMode
-                        ? isLeavingPage
-                          ? 'absolute inset-x-6 top-6 z-0 will-change-transform'
-                          : shouldShowInPageMode
-                            ? 'relative z-10 will-change-transform'
-                            : 'hidden'
+                        ? isActivePage
+                          ? 'relative z-10 overflow-visible'
+                          : 'hidden'
                         : 'relative'
                     }
+                    style={isActivePage && isPageMode ? { contentVisibility: 'auto' } : undefined}
                     initial={false}
                     animate={
                       isPageMode
                         ? {
                             opacity: isActivePage ? 1 : 0,
-                            y: isActivePage ? 0 : 10,
-                            scale: isActivePage ? 1 : 0.995,
+                            y: isActivePage ? 0 : 8,
                             pointerEvents: isActivePage ? 'auto' : 'none',
                           }
-                        : { opacity: 1, y: 0, scale: 1, pointerEvents: 'auto' }
+                        : { opacity: 1, y: 0, pointerEvents: 'auto' }
                     }
-                    transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+                    transition={{
+                      duration: isPageMode && transitionModuleId === moduleConfig.id ? 0.24 : 0,
+                      ease: [0.22, 1, 0.36, 1],
+                    }}
                   >
+                    <PageTransitionAccent active={isPageMode && isActivePage && transitionModuleId === moduleConfig.id} />
                     <ModuleComponent layoutMode={settings.layoutMode} />
                   </motion.div>
                 );

@@ -128,7 +128,7 @@
 - **自定义标题栏**：无边框窗口设计，与主题色完美融合
 - **深色/浅色主题**：支持跟随系统或手动切换
 - **字体大小调节**：支持标准/适中/较大三档字号，满足不同视力需求
-- **双布局模式**：支持默认卡片总览模式和传统 PC 软件式页面模式，左侧模块导航会自动在锚点滚动与页面切换之间切换；页面模式使用独立滚动区并保留模块状态，切换短页面时不会继承上一页滚动位置
+- **双布局模式**：支持默认卡片总览模式和传统 PC 软件式页面模式，左侧模块导航会自动在锚点滚动与页面切换之间切换；页面模式保留模块状态，并对大结果模块使用轻量切换动画，避免重 DOM 过渡造成卡顿
 - **流畅动画**：所有交互都有精心设计的过渡效果
 - **响应式布局**：适配不同窗口尺寸
 - **更多工具入口**：关于页新增 Viap、BinlockX 推荐卡片，可直接跳转夸克网盘下载同作者工具
@@ -413,12 +413,14 @@ npm run tauri build
 
 ### 更新发布
 
-1. 修改 `src-tauri/tauri.conf.json` 中的 `version`
-2. 构建并签名
-3. 上传到 GitHub Releases：
+1. 同步版本号：`package.json`、`package-lock.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`
+2. 更新 `CHANGELOG.md` 和 `.github/workflows/release.yml` 的发布说明
+3. 构建并签名
+4. 上传到 GitHub Releases：
    - `LightC_x.x.x_x64-setup.nsis.zip`
    - `LightC_x.x.x_x64-setup.nsis.zip.sig`
    - `latest.json`（构建时自动生成）
+5. 后续可参考项目内 `skills/lightc-release/SKILL.md` 执行发版前文档同步
 
 ---
 
