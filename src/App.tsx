@@ -34,9 +34,8 @@ function DashboardContent() {
   const [showSettings, setShowSettings] = useState(false);
   // 欢迎弹窗状态
   const [showWelcome, setShowWelcome] = useState(() => shouldShowWelcome());
-  // 卡片模式滚动容器用于锚点导航；页面模式单独使用内容滚动区，避免两种布局互相污染滚动状态。
-  const scrollContainerRef = useRef<HTMLElement>(null);
-  const pageContentRef = useRef<HTMLDivElement>(null);
+  // 两种布局共用同一个内容滚动区，模块实例不会因为模式切换被卸载，扫描结果和展开状态才能保留。
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isPageMode = settings.layoutMode === 'pages';
   const [visibleModuleId, setVisibleModuleId] = useState(settings.activeModuleId);
   const [leavingModuleId, setLeavingModuleId] = useState<string | null>(null);
@@ -60,7 +59,7 @@ function DashboardContent() {
 
     // 页面模式下保留旧页面短暂淡出，同时让新页面淡入，避免菜单切换时出现瞬切。
     // 切换前先回到顶部，防止从长页面切到短页面时继承旧 scrollTop，出现大段空白和多余滚动条。
-    pageContentRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     setLeavingModuleId(previousModuleId);
     visibleModuleIdRef.current = settings.activeModuleId;
     setVisibleModuleId(settings.activeModuleId);
@@ -69,6 +68,13 @@ function DashboardContent() {
     }, 180);
     return () => window.clearTimeout(timer);
   }, [isPageMode, settings.activeModuleId]);
+
+  useEffect(() => {
+    if (!isPageMode) return;
+
+    // 从卡片模式进入页面模式时也回到顶部，避免继承卡片总览的滚动位置。
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+  }, [isPageMode]);
 
   return (
     <div className="h-screen flex flex-col bg-[var(--bg-base)] overflow-hidden select-none">
@@ -94,76 +100,56 @@ function DashboardContent() {
       {/* 侧边导航：卡片模式滚动到锚点，页面模式切换当前模块。 */}
       <AnchorNav scrollContainerRef={scrollContainerRef} />
 
-      {/* 主内容区 - 两种布局拆开滚动容器，避免页面模式短内容被卡片模式/上一模块滚动高度影响。 */}
-      {isPageMode ? (
-        <main ref={scrollContainerRef} className="flex-1 min-h-0 overflow-hidden bg-[var(--bg-base)]">
-          <div className="h-full min-h-0 flex flex-col">
-            <div ref={pageContentRef} className="flex-1 min-h-0 overflow-auto">
-              <div className="max-w-6xl relative w-full mx-auto p-6">
-                {APP_MODULES.map((moduleConfig) => {
-                  const ModuleComponent = moduleConfig.component;
-                  const isActivePage = visibleModuleId === moduleConfig.id;
-                  const isLeavingPage = leavingModuleId === moduleConfig.id;
-                  const shouldRenderInPageMode = isActivePage || isLeavingPage;
-                  return (
-                    <motion.div
-                      key={moduleConfig.id}
-                      data-module-id={moduleConfig.id}
-                      className={
-                        isLeavingPage
-                          ? 'absolute inset-x-6 top-6 z-0'
-                          : shouldRenderInPageMode
-                            ? 'relative z-10'
-                            : 'hidden'
-                      }
-                      initial={false}
-                      animate={{
-                        opacity: isActivePage ? 1 : 0,
-                        y: isActivePage ? 0 : -8,
-                        pointerEvents: isActivePage ? 'auto' : 'none',
-                      }}
-                      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                    >
-                      <ModuleComponent layoutMode={settings.layoutMode} />
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Footer 保持在底部但不参与内容区滚动，短页面不会再撑出多余空白。 */}
-            <Footer />
-          </div>
-        </main>
-      ) : (
-        <main ref={scrollContainerRef} className="flex-1 overflow-auto bg-[var(--bg-base)]">
-          <div className="min-h-full flex flex-col">
-            <div className="max-w-5xl relative w-full mx-auto p-6 space-y-5">
+      {/* 主内容区 - 模块始终挂在同一个父容器内，布局模式只改变展示方式，避免切换模式时丢失本地状态。 */}
+      <main className="flex-1 min-h-0 overflow-hidden bg-[var(--bg-base)]">
+        <div className="h-full min-h-0 flex flex-col">
+          <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-auto">
+            <div className={`${isPageMode ? 'max-w-6xl min-h-full box-border' : 'max-w-5xl space-y-5'} relative w-full mx-auto p-6`}>
               {APP_MODULES.map((moduleConfig) => {
                 const ModuleComponent = moduleConfig.component;
+                const isActivePage = visibleModuleId === moduleConfig.id;
+                const isLeavingPage = leavingModuleId === moduleConfig.id;
+                const shouldShowInPageMode = isActivePage || isLeavingPage;
                 return (
                   <motion.div
                     key={moduleConfig.id}
                     data-module-id={moduleConfig.id}
+                    className={
+                      isPageMode
+                        ? isLeavingPage
+                          ? 'absolute inset-x-6 top-6 z-0 will-change-transform'
+                          : shouldShowInPageMode
+                            ? 'relative z-10 will-change-transform'
+                            : 'hidden'
+                        : 'relative'
+                    }
                     initial={false}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                    animate={
+                      isPageMode
+                        ? {
+                            opacity: isActivePage ? 1 : 0,
+                            y: isActivePage ? 0 : 10,
+                            scale: isActivePage ? 1 : 0.995,
+                            pointerEvents: isActivePage ? 'auto' : 'none',
+                          }
+                        : { opacity: 1, y: 0, scale: 1, pointerEvents: 'auto' }
+                    }
+                    transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
                   >
                     <ModuleComponent layoutMode={settings.layoutMode} />
                   </motion.div>
                 );
               })}
 
-              {/* 底部留白保留给卡片模式，避免最后一个卡片贴住页脚。 */}
-              <div className="h-4" />
-            </div>
-
-            <div className="mt-auto">
-              <Footer />
+              {/* 底部留白只给卡片总览使用，页面模式由固定 Footer 承接底部空间。 */}
+              {!isPageMode && <div className="h-4" />}
             </div>
           </div>
-        </main>
-      )}
+
+          {/* Footer 不放进滚动区，短页面不会因为版权区参与滚动而出现额外空白。 */}
+          <Footer />
+        </div>
+      </main>
     </div>
   );
 }
