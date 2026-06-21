@@ -716,7 +716,7 @@ function DiskGrowthDetailsModal({
   );
 }
 
-export function DiskGrowthModule() {
+export function DiskGrowthModule({ layoutMode = 'cards' }: { layoutMode?: 'cards' | 'pages' }) {
   const { modules, expandedModule, setExpandedModule, updateModuleState, oneClickScanTrigger, stopScanTrigger } = useDashboard();
   const { settings } = useSettings();
   const moduleState = modules.diskGrowth;
@@ -905,6 +905,8 @@ export function DiskGrowthModule() {
 
   return (
     <ModuleCard
+        variant={layoutMode === 'pages' ? 'page' : 'card'}
+        forceExpanded={layoutMode === 'pages'}
       id="disk-growth"
       title="C 盘全盘分析"
       description="基于 MFT 快速扫描 C 盘，对比上次快照定位空间变化来源"

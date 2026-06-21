@@ -13,20 +13,12 @@ import {
   shouldShowWelcome,
   UpdateModal,
   DashboardHeader,
-  JunkCleanModule,
-  BigFilesModule,
-  SocialCleanModule,
-  SystemSlimModule,
-  LeftoversModule,
-  RegistryModule,
-  HotspotModule,
-  ContextMenuModule,
-  DiskGrowthModule,
   SplashScreen,
   Footer,
   AnchorNav,
 } from './components';
 import { DashboardProvider, useDashboard, FontSizeProvider, SettingsProvider, useSettings } from './contexts';
+import { APP_MODULES } from './config/modules';
 import './App.css';
 
 // ============================================================================
@@ -41,8 +33,9 @@ function DashboardContent() {
   const [showSettings, setShowSettings] = useState(false);
   // 欢迎弹窗状态
   const [showWelcome, setShowWelcome] = useState(() => shouldShowWelcome());
-  // 滚动容器 ref（用于锚点导航）
+  // 滚动容器 ref；卡片模式用于锚点滚动，页面模式用于承载单模块页面。
   const scrollContainerRef = useRef<HTMLElement>(null);
+  const isPageMode = settings.layoutMode === 'pages';
 
   // 一键扫描：通过触发器并发启动所有模块扫描
   const handleOneClickScan = useCallback(() => {
@@ -69,56 +62,25 @@ function DashboardContent() {
       {/* 自动更新检查弹窗 */}
       <UpdateModal autoCheck={true} />
 
-      {/* 锚点导航（根据设置显示） */}
-      {settings.showAnchorNav && <AnchorNav scrollContainerRef={scrollContainerRef} />}
+      {/* 侧边导航：卡片模式滚动到锚点，页面模式切换当前模块。 */}
+      <AnchorNav scrollContainerRef={scrollContainerRef} />
 
-      {/* 主内容区 - 微信风格柔和灰白背景，增加间距 */}
+      {/* 主内容区 - 页面模式仍保持所有模块挂载，只隐藏非当前模块，保证切换后状态不丢。 */}
       <main ref={scrollContainerRef} className="flex-1 overflow-auto bg-[var(--bg-base)]">
-        <div className="max-w-5xl mx-auto p-6 space-y-5">
-          {/* 垃圾清理模块 */}
-          <div data-module-id="junk-clean">
-            <JunkCleanModule />
-          </div>
-
-          {/* 大文件清理模块 */}
-          <div data-module-id="big-files">
-            <BigFilesModule />
-          </div>
-
-          {/* 社交软件专清模块 */}
-          <div data-module-id="social-clean">
-            <SocialCleanModule />
-          </div>
-
-          {/* 系统瘦身模块 */}
-          <div data-module-id="system-slim">
-            <SystemSlimModule />
-          </div>
-
-          {/* 卸载残留模块 [深度] */}
-          <div data-module-id="leftovers">
-            <LeftoversModule />
-          </div>
-
-          {/* 注册表冗余模块 [中风险] */}
-          <div data-module-id="registry">
-            <RegistryModule />
-          </div>
-
-          {/* 右键菜单清理模块 [中风险] */}
-          <div data-module-id="context-menu">
-            <ContextMenuModule />
-          </div>
-
-          {/* 大目录分析模块 */}
-          <div data-module-id="hotspot">
-            <HotspotModule />
-          </div>
-
-          {/* C 盘全盘分析模块 */}
-          <div data-module-id="disk-growth">
-            <DiskGrowthModule />
-          </div>
+        <div className={`${isPageMode ? 'max-w-6xl' : 'max-w-5xl'} mx-auto p-6 space-y-5`}>
+          {APP_MODULES.map((moduleConfig) => {
+            const ModuleComponent = moduleConfig.component;
+            const isActivePage = settings.activeModuleId === moduleConfig.id;
+            return (
+              <div
+                key={moduleConfig.id}
+                data-module-id={moduleConfig.id}
+                className={isPageMode && !isActivePage ? 'hidden' : undefined}
+              >
+                <ModuleComponent layoutMode={settings.layoutMode} />
+              </div>
+            );
+          })}
 
           {/* 底部留白 */}
           <div className="h-4" />

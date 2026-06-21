@@ -51,7 +51,7 @@ const itemColors: Record<string, { bg: string; text: string }> = {
 // 组件实现
 // ============================================================================
 
-export function SystemSlimModule() {
+export function SystemSlimModule({ layoutMode = 'cards' }: { layoutMode?: 'cards' | 'pages' }) {
   const { modules, expandedModule, setExpandedModule, updateModuleState, triggerHealthRefresh, oneClickScanTrigger } = useDashboard();
   const moduleState = modules.system;
   const { showToast } = useToast();
@@ -156,6 +156,8 @@ export function SystemSlimModule() {
 
   return (
     <ModuleCard
+        variant={layoutMode === 'pages' ? 'page' : 'card'}
+        forceExpanded={layoutMode === 'pages'}
       id="system"
       title="系统瘦身"
       description="通过调整系统配置，释放数 GB 的磁盘空间"

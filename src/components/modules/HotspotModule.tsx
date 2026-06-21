@@ -402,7 +402,7 @@ function HotspotItem({ entry, rank, maxSize, isFullScan, onOpenFolder, onCleanup
 // 主组件
 // ============================================================================
 
-export function HotspotModule() {
+export function HotspotModule({ layoutMode = 'cards' }: { layoutMode?: 'cards' | 'pages' }) {
   const { modules, expandedModule, setExpandedModule, updateModuleState, oneClickScanTrigger, stopScanTrigger } = useDashboard();
   const moduleState = modules.hotspot;
   const { showToast } = useToast();
@@ -650,6 +650,8 @@ export function HotspotModule() {
 
   return (
     <ModuleCard
+        variant={layoutMode === 'pages' ? 'page' : 'card'}
+        forceExpanded={layoutMode === 'pages'}
       id="hotspot"
       title="大目录分析"
       description={fullScanEnabled ? "全盘深度扫描 C 盘，定位空间占用元凶" : "深度分析 AppData 目录，定位占用空间的元凶"}

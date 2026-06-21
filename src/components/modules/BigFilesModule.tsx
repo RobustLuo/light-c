@@ -20,7 +20,7 @@ import type { LargeFileEntry, LargeFileScanProgress } from '../../types';
 // 组件实现
 // ============================================================================
 
-export function BigFilesModule() {
+export function BigFilesModule({ layoutMode = 'cards' }: { layoutMode?: 'cards' | 'pages' }) {
   const { modules, expandedModule, setExpandedModule, updateModuleState, triggerHealthRefresh, oneClickScanTrigger } = useDashboard();
   const moduleState = modules.bigFiles;
   const { showToast } = useToast();
@@ -311,6 +311,8 @@ export function BigFilesModule() {
       />
 
       <ModuleCard
+        variant={layoutMode === 'pages' ? 'page' : 'card'}
+        forceExpanded={layoutMode === 'pages'}
         id="bigFiles"
         title="大文件清理"
         description="扫描系统盘体积最大的文件，快速释放存储空间"

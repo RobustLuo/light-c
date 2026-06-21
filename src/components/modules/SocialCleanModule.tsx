@@ -103,7 +103,7 @@ const riskLevelConfig: Record<RiskLevel, {
 // 组件实现
 // ============================================================================
 
-export function SocialCleanModule() {
+export function SocialCleanModule({ layoutMode = 'cards' }: { layoutMode?: 'cards' | 'pages' }) {
   const { modules, expandedModule, setExpandedModule, updateModuleState, triggerHealthRefresh, oneClickScanTrigger } = useDashboard();
   const moduleState = modules.social;
   const { showToast } = useToast();
@@ -332,6 +332,8 @@ export function SocialCleanModule() {
       />
 
       <ModuleCard
+        variant={layoutMode === 'pages' ? 'page' : 'card'}
+        forceExpanded={layoutMode === 'pages'}
         id="social"
         title="社交软件专清"
         description="清理微信、QQ、钉钉、飞书等软件的缓存文件"
