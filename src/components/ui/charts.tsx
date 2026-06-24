@@ -2,7 +2,7 @@
 // 轻量图表组件 - 不引入图表库，保持模块渲染成本和打包体积可控
 // ============================================================================
 
-import { useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 
 export const CHART_PALETTE = ['#07c160', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6'];
 
@@ -22,6 +22,12 @@ interface ChartTooltipState {
   y: number;
 }
 
+interface PendingTooltipPointer {
+  item: ChartItem;
+  clientX: number;
+  clientY: number;
+}
+
 interface DonutChartProps {
   items: ChartItem[];
   totalLabel: string;
@@ -34,35 +40,139 @@ interface ColumnChartProps {
   emptyText: string;
 }
 
-export function DonutChart({ items, totalLabel, totalValueLabel, emptyText }: DonutChartProps) {
+const TOOLTIP_WIDTH = 192;
+const TOOLTIP_ESTIMATED_HEIGHT = 82;
+const TOOLTIP_OFFSET = 12;
+const TOOLTIP_EDGE_PADDING = 8;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function calculateTooltipPosition(clientX: number, clientY: number, containerRect: DOMRect) {
+  const pointerX = clientX - containerRect.left;
+  const pointerY = clientY - containerRect.top;
+  const shouldFlipX = pointerX + TOOLTIP_OFFSET + TOOLTIP_WIDTH > containerRect.width;
+  const shouldFlipY = pointerY + TOOLTIP_OFFSET + TOOLTIP_ESTIMATED_HEIGHT > containerRect.height;
+  const rawX = shouldFlipX
+    ? pointerX - TOOLTIP_OFFSET - TOOLTIP_WIDTH
+    : pointerX + TOOLTIP_OFFSET;
+  const rawY = shouldFlipY
+    ? pointerY - TOOLTIP_OFFSET - TOOLTIP_ESTIMATED_HEIGHT
+    : pointerY + TOOLTIP_OFFSET;
+
+  // tooltip 必须留在图表容器内部，否则卡片右侧/底部会把浮层裁掉。
+  return {
+    x: Math.round(clamp(rawX, TOOLTIP_EDGE_PADDING, Math.max(TOOLTIP_EDGE_PADDING, containerRect.width - TOOLTIP_WIDTH - TOOLTIP_EDGE_PADDING))),
+    y: Math.round(clamp(rawY, TOOLTIP_EDGE_PADDING, Math.max(TOOLTIP_EDGE_PADDING, containerRect.height - TOOLTIP_ESTIMATED_HEIGHT - TOOLTIP_EDGE_PADDING))),
+  };
+}
+
+function useChartHover() {
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<ChartTooltipState | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const totalValue = items.reduce((sum, item) => sum + item.value, 0);
+  const activeItemIdRef = useRef<string | null>(null);
+  const pendingPointerRef = useRef<PendingTooltipPointer | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
+  const flushTooltip = useCallback(() => {
+    animationFrameRef.current = null;
+    const pendingPointer = pendingPointerRef.current;
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    if (!pendingPointer || !containerRect) return;
+
+    const position = calculateTooltipPosition(
+      pendingPointer.clientX,
+      pendingPointer.clientY,
+      containerRect
+    );
+
+    setTooltip(previousTooltip => {
+      const unchanged =
+        previousTooltip?.item.id === pendingPointer.item.id &&
+        previousTooltip.x === position.x &&
+        previousTooltip.y === position.y;
+
+      // 鼠标移动频率远高于界面需要，位置没变时不触发 React 重渲染。
+      if (unchanged) return previousTooltip;
+
+      return {
+        item: pendingPointer.item,
+        x: position.x,
+        y: position.y,
+      };
+    });
+  }, []);
+
+  const updateTooltip = useCallback((event: MouseEvent, item: ChartItem) => {
+    if (activeItemIdRef.current !== item.id) {
+      activeItemIdRef.current = item.id;
+      setActiveItemId(item.id);
+    }
+
+    pendingPointerRef.current = {
+      item,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    };
+
+    if (animationFrameRef.current === null) {
+      // 用 RAF 合并 mousemove，避免每个鼠标事件都 setState 导致图表掉帧。
+      animationFrameRef.current = window.requestAnimationFrame(flushTooltip);
+    }
+  }, [flushTooltip]);
+
+  const clearHover = useCallback(() => {
+    activeItemIdRef.current = null;
+    pendingPointerRef.current = null;
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    setActiveItemId(null);
+    setTooltip(null);
+  }, []);
+
+  useEffect(() => clearHover, [clearHover]);
+
+  return {
+    activeItemId,
+    tooltip,
+    containerRef,
+    updateTooltip,
+    clearHover,
+  };
+}
+
+export function DonutChart({ items, totalLabel, totalValueLabel, emptyText }: DonutChartProps) {
+  const { activeItemId, tooltip, containerRef, updateTooltip, clearHover } = useChartHover();
+  const totalValue = useMemo(() => items.reduce((sum, item) => sum + item.value, 0), [items]);
   const radius = 46;
   const circumference = 2 * Math.PI * radius;
-  let accumulatedRatio = 0;
+  const segments = useMemo(() => {
+    let accumulatedRatio = 0;
+    return items.map((item, index) => {
+      const ratio = totalValue > 0 ? item.value / totalValue : 0;
+      const dashLength = Math.max(0, ratio * circumference);
+      const dashOffset = -accumulatedRatio * circumference;
+      accumulatedRatio += ratio;
 
-  const updateTooltip = (event: MouseEvent, item: ChartItem) => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    // tooltip 跟随鼠标但限制在组件内计算，避免滚动页面后定位漂移。
-    setTooltip({
-      item,
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
+      return {
+        item,
+        ratio,
+        dashLength,
+        dashOffset,
+        color: item.color ?? CHART_PALETTE[index % CHART_PALETTE.length],
+      };
     });
-  };
+  }, [circumference, items, totalValue]);
 
   return (
     <div
       ref={containerRef}
       className="relative grid gap-4 md:grid-cols-[140px_minmax(0,1fr)] md:items-center"
-      onMouseLeave={() => {
-        setActiveItemId(null);
-        setTooltip(null);
-      }}
+      onMouseLeave={clearHover}
     >
       <div className="relative mx-auto h-32 w-32">
         <svg viewBox="0 0 120 120" className="-rotate-90">
@@ -74,13 +184,8 @@ export function DonutChart({ items, totalLabel, totalValueLabel, emptyText }: Do
             stroke="var(--bg-hover)"
             strokeWidth="16"
           />
-          {items.map((item, index) => {
-            const ratio = totalValue > 0 ? item.value / totalValue : 0;
-            const dashLength = Math.max(0, ratio * circumference);
-            const dashOffset = -accumulatedRatio * circumference;
-            const color = item.color ?? CHART_PALETTE[index % CHART_PALETTE.length];
+          {segments.map(({ item, ratio, dashLength, dashOffset, color }) => {
             const isActive = activeItemId === item.id;
-            accumulatedRatio += ratio;
 
             return (
               <circle
@@ -94,12 +199,9 @@ export function DonutChart({ items, totalLabel, totalValueLabel, emptyText }: Do
                 strokeDasharray={`${dashLength} ${circumference - dashLength}`}
                 strokeDashoffset={dashOffset}
                 strokeLinecap={ratio > 0.03 ? 'round' : 'butt'}
-                className="cursor-pointer transition-all duration-150"
+                className="cursor-pointer transition-[opacity,stroke-width] duration-150"
                 opacity={activeItemId && !isActive ? 0.35 : 1}
-                onMouseEnter={(event) => {
-                  setActiveItemId(item.id);
-                  updateTooltip(event, item);
-                }}
+                onMouseEnter={(event) => updateTooltip(event, item)}
                 onMouseMove={(event) => updateTooltip(event, item)}
               />
             );
@@ -126,10 +228,7 @@ export function DonutChart({ items, totalLabel, totalValueLabel, emptyText }: Do
                 className={`flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left text-xs transition ${
                   isActive ? 'bg-[var(--bg-hover)]' : 'hover:bg-[var(--bg-hover)]'
                 }`}
-                onMouseEnter={(event) => {
-                  setActiveItemId(item.id);
-                  updateTooltip(event, item);
-                }}
+                onMouseEnter={(event) => updateTooltip(event, item)}
                 onMouseMove={(event) => updateTooltip(event, item)}
               >
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
@@ -154,31 +253,14 @@ export function DonutChart({ items, totalLabel, totalValueLabel, emptyText }: Do
 }
 
 export function ColumnChart({ items, emptyText }: ColumnChartProps) {
-  const [activeItemId, setActiveItemId] = useState<string | null>(null);
-  const [tooltip, setTooltip] = useState<ChartTooltipState | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const maxValue = Math.max(...items.map(item => item.value), 1);
-
-  const updateTooltip = (event: MouseEvent, item: ChartItem) => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    // 柱状图 tooltip 与柱体共用同一套状态，保证图形和下方图例 hover 行为一致。
-    setTooltip({
-      item,
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-    });
-  };
+  const { activeItemId, tooltip, containerRef, updateTooltip, clearHover } = useChartHover();
+  const maxValue = useMemo(() => Math.max(...items.map(item => item.value), 1), [items]);
 
   return (
     <div
       ref={containerRef}
       className="relative"
-      onMouseLeave={() => {
-        setActiveItemId(null);
-        setTooltip(null);
-      }}
+      onMouseLeave={clearHover}
     >
       <div className="flex h-36 items-end gap-2 border-b border-[var(--border-color)] pb-2">
         {items.length === 0 ? (
@@ -196,7 +278,7 @@ export function ColumnChart({ items, emptyText }: ColumnChartProps) {
                 <div className="flex h-28 w-full items-end justify-center">
                   <button
                     type="button"
-                    className="w-full max-w-10 cursor-pointer rounded-t-lg transition-all duration-150 hover:brightness-110"
+                    className="w-full max-w-10 cursor-pointer rounded-t-lg transition-[filter,opacity,transform] duration-150 hover:brightness-110"
                     style={{
                       height: `${heightPercent}%`,
                       backgroundColor: color,
@@ -204,10 +286,7 @@ export function ColumnChart({ items, emptyText }: ColumnChartProps) {
                       transform: isActive ? 'translateY(-3px)' : 'translateY(0)',
                     }}
                     aria-label={item.label}
-                    onMouseEnter={(event) => {
-                      setActiveItemId(item.id);
-                      updateTooltip(event, item);
-                    }}
+                    onMouseEnter={(event) => updateTooltip(event, item)}
                     onMouseMove={(event) => updateTooltip(event, item)}
                   />
                 </div>
@@ -232,10 +311,7 @@ export function ColumnChart({ items, emptyText }: ColumnChartProps) {
               className={`flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-xs transition ${
                 isActive ? 'bg-[var(--bg-hover)]' : 'hover:bg-[var(--bg-hover)]'
               }`}
-              onMouseEnter={(event) => {
-                setActiveItemId(item.id);
-                updateTooltip(event, item);
-              }}
+              onMouseEnter={(event) => updateTooltip(event, item)}
               onMouseMove={(event) => updateTooltip(event, item)}
             >
               <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: color }} />
@@ -256,10 +332,10 @@ function ChartTooltip({ tooltip }: { tooltip: ChartTooltipState | null }) {
 
   return (
     <div
-      className="pointer-events-none absolute z-30 min-w-40 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 shadow-lg shadow-black/10"
+      className="pointer-events-none absolute z-30 w-48 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 shadow-lg shadow-black/10"
       style={{
-        left: tooltip.x + 12,
-        top: tooltip.y + 12,
+        left: tooltip.x,
+        top: tooltip.y,
       }}
     >
       <p className="max-w-56 truncate text-xs font-semibold text-[var(--text-primary)]" title={tooltip.item.label}>
