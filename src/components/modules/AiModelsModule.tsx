@@ -5,7 +5,7 @@ import {
   FolderOpen,
   Gauge,
   Loader2,
-  Plus,
+  // Plus,
   Search,
   Sparkles,
   X,
@@ -149,6 +149,7 @@ export function AiModelsModule({ layoutMode = 'cards' }: { layoutMode?: 'cards' 
     };
   }, []);
 
+  // @ts-ignore
   const handleAddCustomPath = useCallback(async () => {
     try {
       const selectedPath = await pickFolderDialog();
@@ -209,7 +210,7 @@ export function AiModelsModule({ layoutMode = 'cards' }: { layoutMode?: 'cards' 
             disabled={isScanning}
             onChange={setEnableDeepDiscovery}
           />
-          <button
+          {/* <button
             onClick={(event) => {
               event.stopPropagation();
               handleAddCustomPath();
@@ -218,7 +219,7 @@ export function AiModelsModule({ layoutMode = 'cards' }: { layoutMode?: 'cards' 
           >
             <Plus className="w-3.5 h-3.5" />
             添加目录
-          </button>
+          </button> */}
         </div>
       }
     >
@@ -337,7 +338,7 @@ function DeepDiscoveryToggle({
   return (
     <div
       className="flex items-center gap-2 rounded-lg bg-[var(--bg-hover)] px-3 py-1.5"
-      title="开启后使用 MFT 扫描本地 NTFS 盘的大模型特征文件，适合不知道模型放在哪个盘的情况；管理员权限下速度和覆盖率更好。"
+      title="开启后深度扫描全盘模型特征文件；管理员权限下速度和覆盖率更好。"
     >
       <span className="text-xs font-medium text-[var(--fg-secondary)]">深度发现</span>
       <button
