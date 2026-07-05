@@ -78,7 +78,7 @@ export function DriveSelect({
   onChange,
   disabled = false,
   // 统一盘符选择器宽度，避免卡片模式下不同模块标题区域出现视觉跳变。
-  widthClass = 'w-40',
+  widthClass = 'w-28',
 }: DriveSelectProps) {
   const options = useMemo<SelectOption[]>(
     () => {
