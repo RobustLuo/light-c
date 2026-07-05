@@ -17,7 +17,7 @@ interface AppSettings {
   hotspotSizeThreshold: number;
   /** 深度扫描时是否忽略系统目录（默认 true，保持现有行为） */
   hotspotIgnoreSystemDirs: boolean;
-  /** C 盘全盘分析最多展示变化目录数量（默认 300） */
+  /** 磁盘变化分析最多展示变化目录数量（默认 300） */
   diskGrowthMaxEntries: number;
 }
 

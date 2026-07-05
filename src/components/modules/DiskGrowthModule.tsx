@@ -995,12 +995,11 @@ export function DiskGrowthModule({ layoutMode = 'cards', isPageActive = true }: 
   const hasMore = entries.length > displayedEntries.length;
   const driveSelector = (
     <div className="flex items-center gap-2 shrink-0" onClick={(event) => event.stopPropagation()}>
-      <span className="text-[12px] text-[var(--text-muted)]">磁盘</span>
       <Select
         value={selectedDriveLetter}
         options={driveOptions}
         onChange={handleDriveChange}
-        widthClass="w-48"
+        widthClass="w-44"
         size="sm"
         disabled={moduleState.status === 'scanning'}
       />
@@ -1016,7 +1015,7 @@ export function DiskGrowthModule({ layoutMode = 'cards', isPageActive = true }: 
         variant={layoutMode === 'pages' ? 'page' : 'card'}
         forceExpanded={layoutMode === 'pages'}
       id="disk-growth"
-      title="全盘分析"
+      title="磁盘变化分析"
       description={`基于 MFT 快速扫描 ${selectedDriveLabel}，对比上次快照定位空间变化来源`}
       icon={<HardDrive className="w-5 h-5 text-[var(--brand-green)]" />}
       status={moduleState.status}
@@ -1028,7 +1027,7 @@ export function DiskGrowthModule({ layoutMode = 'cards', isPageActive = true }: 
       onScan={handleScan}
       scanButtonText="开始扫描"
       scanDisabled={isAdmin === false || Boolean(selectedDrive && !selectedDrive.is_ntfs)}
-      headerExtra={driveSelector}
+      titleExtra={driveSelector}
       error={error}
     >
       <div className="mx-4 mt-4 flex flex-col gap-2 rounded-xl bg-[var(--bg-main)] px-4 py-3 text-[12px] text-[var(--text-muted)] sm:flex-row sm:items-center sm:justify-between">
