@@ -443,6 +443,7 @@ npm run tauri build
    - `LightC_x.x.x_x64-setup.nsis.zip`
    - `LightC_x.x.x_x64-setup.nsis.zip.sig`
    - `latest.json`（构建时自动生成）
+   - `LightC_webview2_offline_x64.exe`（内置 WebView2 离线安装器，适合 WebView2 环境异常或安装时网络受限的用户）
    - `LightC_portable_x64.zip`（便携包内包含 `LightC.portable` 标记文件，用于禁用安装器式自动更新）
    - `LightC_installer_exe.sig`（安装版用于校验当前 `LightC.exe` 的官方签名，格式与 updater 的 base64 签名字符串一致）
    - `LightC_portable_exe.sig`（便携版解压后用于校验当前 `LightC.exe` 的官方签名，格式与 updater 的 base64 签名字符串一致）
@@ -450,7 +451,7 @@ npm run tauri build
 
 ### 便携版更新策略
 
-- 安装版保留 Tauri 自动更新，继续使用 `latest.json` 和签名包完成更新。
+- 安装版保留 Tauri 自动更新，继续使用 `latest.json` 和签名包完成更新；WebView2 异常或安装时网络受限的用户可改用 `LightC_webview2_offline_x64.exe`。
 - 完整性校验不复用更新包签名，而是读取当前版本 Release 中的 exe 专用签名资产，避免把 zip/updater 包签名误用于运行中 exe。
 - 便携版由发布流程写入 `LightC.portable` 标记文件，运行时识别后不会自动弹出更新安装器。
 - 便携版“检查更新”入口会优先读取 Release 的 `download.json` 并打开作者网盘下载页，用户下载新版 zip 后覆盖当前目录即可；读取失败时降级到 GitHub Releases。
