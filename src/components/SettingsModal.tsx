@@ -1000,7 +1000,7 @@ function GuideSettings() {
               大目录分析
             </p>
             <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6">
-              默认分析 AppData 用户数据热点；深度扫描会覆盖 C 盘主要目录。管理员权限下优先使用
+              默认分析 AppData 用户数据热点；深度扫描可在模块标题旁选择目标磁盘。管理员权限下优先使用
               <span className="text-[var(--brand-green)] font-medium"> NTFS MFT</span>，失败时自动降级遍历。
             </p>
             <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6 mt-2">

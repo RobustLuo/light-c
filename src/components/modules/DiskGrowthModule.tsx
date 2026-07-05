@@ -26,7 +26,14 @@ import {
 } from 'lucide-react';
 import { ModuleCard } from '../ModuleCard';
 import { EmptyState } from '../EmptyState';
-import { Select, type SelectOption } from '../ui/Select';
+import {
+  defaultDriveLetter,
+  DriveSelect,
+  driveDisplayName,
+  driveOptionTitle,
+  normalizeDriveLetter,
+  useLocalDrives,
+} from '../ui/DriveSelect';
 import { useModuleDashboard } from '../../contexts/DashboardContext';
 import { useSettings } from '../../contexts';
 import { openSearchUrl } from '../../utils/searchEngine';
@@ -36,7 +43,6 @@ import {
   cancelDiskGrowthScan,
   getDiskGrowthDirectoryDetails,
   getDiskGrowthFileDetails,
-  getLocalDrives,
   openInFolder,
   scanDiskGrowth,
   type DiskGrowthAnalyzeEntry,
@@ -48,7 +54,6 @@ import {
   type DiskGrowthReport,
   type DiskGrowthScanProgress,
   type DiskGrowthScanResponse,
-  type LocalDriveInfo,
 } from '../../api/commands';
 import { formatSize } from '../../utils/format';
 
@@ -96,25 +101,6 @@ function formatDuration(ms?: number): string {
 
 function formatPreviousScanTime(scanSummary: DiskGrowthScanResponse): string {
   return scanSummary.previous_scan_time || '暂无历史快照';
-}
-
-function normalizeDriveLetter(value?: string | null): string {
-  const letter = value?.match(/[a-z]/i)?.[0]?.toUpperCase() ?? 'C';
-  return `${letter}:`;
-}
-
-function driveDisplayName(driveLetter: string): string {
-  return `${normalizeDriveLetter(driveLetter).replace(':', '')} 盘`;
-}
-
-function buildDriveOptionLabel(drive: LocalDriveInfo): string {
-  const labelParts = [drive.drive_letter];
-  if (drive.volume_name) labelParts.push(drive.volume_name);
-  labelParts.push(formatSize(drive.free_space));
-  labelParts.push('可用');
-  if (drive.is_system) labelParts.push('系统盘');
-  if (!drive.is_ntfs) labelParts.push(drive.file_system || '非 NTFS');
-  return labelParts.join(' · ');
 }
 
 function normalizeDiskPath(path: string): string {
@@ -764,24 +750,12 @@ export function DiskGrowthModule({ layoutMode = 'cards', isPageActive = true }: 
   const [scanElapsed, setScanElapsed] = useState(0);
   const [scanProgress, setScanProgress] = useState<DiskGrowthScanProgress | null>(null);
   const [detailEntry, setDetailEntry] = useState<DiskGrowthEntry | null>(null);
-  const [drives, setDrives] = useState<LocalDriveInfo[]>([]);
-  const [drivesError, setDrivesError] = useState<string | null>(null);
+  const { drives, error: drivesError } = useLocalDrives();
   const [selectedDriveLetter, setSelectedDriveLetter] = useState('C:');
 
   const isExpanded = expandedModule === 'disk-growth';
   const selectedDrive = drives.find((drive) => drive.drive_letter === selectedDriveLetter) ?? null;
   const selectedDriveLabel = driveDisplayName(selectedDriveLetter);
-  const driveOptions = useMemo<SelectOption[]>(
-    () => {
-      const options = drives.map((drive) => ({
-        value: drive.drive_letter,
-        label: buildDriveOptionLabel(drive),
-      }));
-      // 分区列表读取失败时保留 C 盘兜底选项，让用户仍可按历史方式扫描系统盘。
-      return options.length > 0 ? options : [{ value: 'C:', label: 'C: · 默认系统盘' }];
-    },
-    [drives]
-  );
 
   const resetCurrentDriveResult = useCallback(() => {
     setScanSummary(null);
@@ -808,27 +782,15 @@ export function DiskGrowthModule({ layoutMode = 'cards', isPageActive = true }: 
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    getLocalDrives()
-      .then((result) => {
-        if (cancelled) return;
-        setDrives(result);
-        setDrivesError(null);
-        const defaultDrive = result.find((drive) => drive.is_system) ?? result.find((drive) => drive.drive_letter === 'C:') ?? result[0];
-        if (defaultDrive) {
-          setSelectedDriveLetter(defaultDrive.drive_letter);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setDrivesError(String(err));
-          setSelectedDriveLetter('C:');
-        }
+    if (drives.length > 0) {
+      setSelectedDriveLetter((current) => {
+        const normalized = normalizeDriveLetter(current);
+        return drives.some((drive) => drive.drive_letter === normalized)
+          ? normalized
+          : defaultDriveLetter(drives);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    }
+  }, [drives]);
 
   useEffect(() => {
     if (moduleState.status !== 'scanning') {
@@ -995,12 +957,10 @@ export function DiskGrowthModule({ layoutMode = 'cards', isPageActive = true }: 
   const hasMore = entries.length > displayedEntries.length;
   const driveSelector = (
     <div className="flex items-center gap-2 shrink-0" onClick={(event) => event.stopPropagation()}>
-      <Select
+      <DriveSelect
         value={selectedDriveLetter}
-        options={driveOptions}
+        drives={drives}
         onChange={handleDriveChange}
-        widthClass="w-44"
-        size="sm"
         disabled={moduleState.status === 'scanning'}
       />
     </div>
@@ -1031,7 +991,7 @@ export function DiskGrowthModule({ layoutMode = 'cards', isPageActive = true }: 
       error={error}
     >
       <div className="mx-4 mt-4 flex flex-col gap-2 rounded-xl bg-[var(--bg-main)] px-4 py-3 text-[12px] text-[var(--text-muted)] sm:flex-row sm:items-center sm:justify-between">
-        <span>
+        <span title={selectedDrive ? driveOptionTitle(selectedDrive) : selectedDriveLabel}>
           当前分析：{selectedDriveLabel}
           {selectedDrive?.volume_name ? ` · ${selectedDrive.volume_name}` : ''}
           {selectedDrive?.file_system ? ` · ${selectedDrive.file_system}` : ''}

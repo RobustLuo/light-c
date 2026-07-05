@@ -844,9 +844,9 @@ export async function scanHotspot(
   maxDepth?: number,
   sizeThresholdMb?: number,
   ignoreSystemDirs?: boolean,
+  driveLetter?: string,
 ): Promise<HotspotScanResult> {
-  console.log('[scanHotspot] JS 璋冪敤鍙傛暟:', { topN, fullScan, maxDepth, sizeThresholdMb, ignoreSystemDirs });
-  return invoke<HotspotScanResult>('scan_hotspot', { topN, fullScan, maxDepth, sizeThresholdMb, ignoreSystemDirs });
+  return invoke<HotspotScanResult>('scan_hotspot', { topN, fullScan, maxDepth, sizeThresholdMb, ignoreSystemDirs, driveLetter });
 }
 
 /**
