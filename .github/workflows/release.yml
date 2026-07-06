@@ -50,18 +50,54 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'LightC v2.11.0'
+          releaseName: 'LightC v2.11.1'
           releaseBody: |
             ## 更新内容
-            - “C 盘全盘分析”升级为“磁盘变化分析”，支持选择 C/D/E 等目标磁盘并按盘符独立保存快照
-            - 大文件清理、大目录分析接入统一盘符选择器，大文件清理新增可配置扫描文件数（10-500）
-            - 修复自定义标题栏双击最大化/还原后窗口内容偏移、无边框错位等问题
-            - 优化垃圾清理删除遮罩动画，移除高成本背景模糊并保留轻量旋转反馈，降低高刷新率屏幕下的 WebView2 GPU 压力
+            - 修复新增 WebView2 离线安装包后，常规安装版完整性校验可能误报签名不一致的问题
+            - 安装版完整性校验同时兼容常规安装包与 WebView2 离线安装包的 exe 签名资产
 
             请查看 [更新日志](https://github.com/Chunyu33/light-c/blob/main/CHANGELOG.md) 了解详细版本变更。
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
+
+      - name: Create normal installer exe signature
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $ReleaseExe = "src-tauri\target\release\LightC.exe"
+          $PreservedInstallerExe = "LightC_installer_runtime.exe"
+
+          if (-not (Test-Path $ReleaseExe)) {
+            Write-Host "Error: normal installer runtime LightC.exe not found" -ForegroundColor Red
+            exit 1
+          }
+
+          # 必须在 WebView2 离线包二次构建前签名；后续 tauri build 会覆盖 target\release\LightC.exe。
+          Copy-Item $ReleaseExe $PreservedInstallerExe -Force
+          $SignatureOutput = npx tauri signer sign $ReleaseExe
+          $GeneratedSigPath = "$ReleaseExe.sig"
+          if (Test-Path $GeneratedSigPath) {
+            $SignatureText = Get-Content -Raw -Path $GeneratedSigPath
+            if ($SignatureText.TrimStart().StartsWith("untrusted comment:")) {
+              $SignatureBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($SignatureText))
+            } else {
+              $SignatureBase64 = $SignatureText.Trim()
+            }
+          } else {
+            $SignatureBase64 = ($SignatureOutput -split "`r?`n" | Where-Object { $_ -match '^[A-Za-z0-9+/=]+$' } | Select-Object -Last 1)
+            if (-not $SignatureBase64) {
+              Write-Host "Error: installer exe signature output not found" -ForegroundColor Red
+              exit 1
+            }
+          }
+
+          $SignatureBase64 | Out-File -FilePath "LightC_installer_exe.sig" -Encoding utf8 -NoNewline
+          Write-Host "  Created: LightC_installer_exe.sig" -ForegroundColor Green
 
       # tauri-action 已创建 Release 并上传了 NSIS 安装包
       # 以下额外打包 WebView2 离线安装包和绿色便携版并上传到同一个 Release
@@ -71,6 +107,8 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           $ConfigPath = "tauri.webview2-offline.conf.json"
           $OutputName = "LightC_webview2_offline_x64.exe"
@@ -106,6 +144,32 @@ jobs:
 
           Copy-Item $Installer.FullName $OutputName -Force
           Write-Host "  Created: $OutputName" -ForegroundColor Green
+
+          $OfflineRuntimeExe = "src-tauri\target\release\LightC.exe"
+          if (-not (Test-Path $OfflineRuntimeExe)) {
+            Write-Host "Error: WebView2 offline runtime LightC.exe not found" -ForegroundColor Red
+            exit 1
+          }
+
+          $SignatureOutput = npx tauri signer sign $OfflineRuntimeExe
+          $GeneratedSigPath = "$OfflineRuntimeExe.sig"
+          if (Test-Path $GeneratedSigPath) {
+            $SignatureText = Get-Content -Raw -Path $GeneratedSigPath
+            if ($SignatureText.TrimStart().StartsWith("untrusted comment:")) {
+              $SignatureBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($SignatureText))
+            } else {
+              $SignatureBase64 = $SignatureText.Trim()
+            }
+          } else {
+            $SignatureBase64 = ($SignatureOutput -split "`r?`n" | Where-Object { $_ -match '^[A-Za-z0-9+/=]+$' } | Select-Object -Last 1)
+            if (-not $SignatureBase64) {
+              Write-Host "Error: WebView2 offline exe signature output not found" -ForegroundColor Red
+              exit 1
+            }
+          }
+
+          $SignatureBase64 | Out-File -FilePath "LightC_webview2_offline_exe.sig" -Encoding utf8 -NoNewline
+          Write-Host "  Created: LightC_webview2_offline_exe.sig" -ForegroundColor Green
           echo "webview2_offline_installer=$OutputName" >> $env:GITHUB_OUTPUT
         id: webview2_offline
 
@@ -120,17 +184,20 @@ jobs:
           $ReleaseDir = "src-tauri\target\release"
           $PortableDir = "portable_temp"
           $ZipName = "LightC_portable_x64.zip"
+          $PreservedInstallerExe = "LightC_installer_runtime.exe"
 
           Write-Host "Creating portable package..." -ForegroundColor Cyan
 
           New-Item -ItemType Directory -Path $PortableDir -Force | Out-Null
 
           # 主程序
-          if (-not (Test-Path "$ReleaseDir\LightC.exe")) {
+          $PortableSourceExe = if (Test-Path $PreservedInstallerExe) { $PreservedInstallerExe } else { "$ReleaseDir\LightC.exe" }
+          if (-not (Test-Path $PortableSourceExe)) {
             Write-Host "Error: LightC.exe not found" -ForegroundColor Red
             exit 1
           }
-          Copy-Item "$ReleaseDir\LightC.exe" $PortableDir -Force
+          # 便携版使用常规安装版同一份 runtime exe，避免 WebView2 离线包二次构建后的 exe 被误打进便携包。
+          Copy-Item $PortableSourceExe "$PortableDir\LightC.exe" -Force
           Write-Host "  Copied: LightC.exe" -ForegroundColor White
 
           # 便携版与安装版复用同一个 exe，通过 marker 让运行时禁用安装器式自动更新。
@@ -166,7 +233,7 @@ jobs:
           Compress-Archive -Path "$PortableDir\*" -DestinationPath $ZipName -Force
           Write-Host "  Created: $ZipName" -ForegroundColor Green
 
-          # 安装版和便携版复用同一个 LightC.exe；运行时校验当前 exe 字节，因此为 exe 单独生成签名资产。
+          # 便携版运行时会读取 LightC.portable marker，因此单独生成便携版 exe 签名资产。
           $SignatureOutput = npx tauri signer sign "$PortableDir\LightC.exe"
           $GeneratedSigPath = "$PortableDir\LightC.exe.sig"
           if (Test-Path $GeneratedSigPath) {
@@ -186,9 +253,7 @@ jobs:
               exit 1
             }
           }
-          $SignatureBase64 | Out-File -FilePath "LightC_installer_exe.sig" -Encoding utf8 -NoNewline
           $SignatureBase64 | Out-File -FilePath "LightC_portable_exe.sig" -Encoding utf8 -NoNewline
-          Write-Host "  Created: LightC_installer_exe.sig" -ForegroundColor Green
           Write-Host "  Created: LightC_portable_exe.sig" -ForegroundColor Green
 
           # 清理临时目录
@@ -203,12 +268,13 @@ jobs:
         run: |
           $ZipPath = "LightC_portable_x64.zip"
           $InstallerSigPath = "LightC_installer_exe.sig"
+          $WebView2OfflineSigPath = "LightC_webview2_offline_exe.sig"
           $PortableSigPath = "LightC_portable_exe.sig"
           $DownloadConfigPath = "download.json"
           $WebView2OfflineInstallerPath = "LightC_webview2_offline_x64.exe"
-          if ((Test-Path $ZipPath) -and (Test-Path $InstallerSigPath) -and (Test-Path $PortableSigPath) -and (Test-Path $DownloadConfigPath) -and (Test-Path $WebView2OfflineInstallerPath)) {
+          if ((Test-Path $ZipPath) -and (Test-Path $InstallerSigPath) -and (Test-Path $WebView2OfflineSigPath) -and (Test-Path $PortableSigPath) -and (Test-Path $DownloadConfigPath) -and (Test-Path $WebView2OfflineInstallerPath)) {
             Write-Host "Uploading extra assets to release..." -ForegroundColor Cyan
-            gh release upload ${{ github.ref_name }} $ZipPath $InstallerSigPath $PortableSigPath $DownloadConfigPath $WebView2OfflineInstallerPath --clobber
+            gh release upload ${{ github.ref_name }} $ZipPath $InstallerSigPath $WebView2OfflineSigPath $PortableSigPath $DownloadConfigPath $WebView2OfflineInstallerPath --clobber
             Write-Host "Upload done!" -ForegroundColor Green
           } else {
             Write-Host "Error: portable zip, exe signatures, download config or WebView2 offline installer not found" -ForegroundColor Red

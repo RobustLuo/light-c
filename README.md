@@ -168,7 +168,7 @@
 
 ### 🔐 安全与校验
 - **官方版本安全声明**：设置中独立选项卡，警示第三方打包风险（捆绑插件、主页劫持、后门程序）
-- **一键完整性校验**：设置 → 安全与校验 可直接验证当前 LightC.exe 是否通过官方 ed25519 签名；安装版和便携版分别读取 Release 中的 `LightC_installer_exe.sig` / `LightC_portable_exe.sig`
+- **一键完整性校验**：设置 → 安全与校验 可直接验证当前 LightC.exe 是否通过官方 ed25519 签名；常规安装包、WebView2 离线安装包和便携版分别使用 Release 中的 exe 专用签名资产
 - **签名格式兼容**：校验逻辑会兼容历史 Release 中被双重 base64 包装的签名资产，并把签名资产异常与文件内容不一致分开提示，降低官方包误报风险
 - **版权与渠道声明**：首页底部及设置中明确标注官方发布渠道（GitHub Releases、当前 Release 的 `download.json` 网盘链接、B站/抖音 @Evan的像素空间），并提示第三方转载、网盘引流和二次打包风险
 
@@ -448,6 +448,7 @@ npm run tauri build
    - `LightC_webview2_offline_x64.exe`（内置 WebView2 离线安装器，适合 WebView2 环境异常或安装时网络受限的用户）
    - `LightC_portable_x64.zip`（便携包内包含 `LightC.portable` 标记文件，用于禁用安装器式自动更新）
    - `LightC_installer_exe.sig`（安装版用于校验当前 `LightC.exe` 的官方签名，格式与 updater 的 base64 签名字符串一致）
+   - `LightC_webview2_offline_exe.sig`（WebView2 离线安装版用于校验当前 `LightC.exe` 的官方签名）
    - `LightC_portable_exe.sig`（便携版解压后用于校验当前 `LightC.exe` 的官方签名，格式与 updater 的 base64 签名字符串一致）
    - `download.json`（官方渠道配置，便携版更新入口和设置页会动态读取作者网盘等链接）
 

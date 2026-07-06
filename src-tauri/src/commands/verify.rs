@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 const PORTABLE_MARKER_FILE: &str = "LightC.portable";
 const INSTALLER_EXE_SIGNATURE_ASSET: &str = "LightC_installer_exe.sig";
+const WEBVIEW2_OFFLINE_EXE_SIGNATURE_ASSET: &str = "LightC_webview2_offline_exe.sig";
 const PORTABLE_EXE_SIGNATURE_ASSET: &str = "LightC_portable_exe.sig";
 const OFFICIAL_RELEASE_URL: &str = "https://github.com/Chunyu33/light-c/releases";
 const UPDATER_PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU3NEJFNkU1NzM3OEQyQTQKUldTazBuaHo1ZVpMVnpKbnUrSnUrWlpVakhKL1c5ZXV3ZXhYeW4wbFRSeVFyb01TZ0h2RGpsZFoK";
@@ -34,6 +35,7 @@ pub struct VerifyIntegrityResult {
 }
 
 struct SignatureSource {
+    asset_name: &'static str,
     signature: String,
 }
 
@@ -88,8 +90,8 @@ async fn verify_integrity_inner() -> Result<VerifyIntegrityResult, VerifyError> 
         .map_err(|error| VerifyError::Local(format!("无法读取当前程序文件：{}", error)))?;
 
     let app_version = current_version();
-    let signature_source = fetch_signature(&channel, &app_version).await?;
-    verify_exe_signature(&exe_bytes, &signature_source.signature)?;
+    let signature_sources = fetch_signatures(&channel, &app_version).await?;
+    verify_exe_signatures(&exe_bytes, &signature_sources)?;
 
     Ok(build_result(
         true,
@@ -100,20 +102,47 @@ async fn verify_integrity_inner() -> Result<VerifyIntegrityResult, VerifyError> 
     ))
 }
 
-async fn fetch_signature(
+async fn fetch_signatures(
     channel: &DistributionChannel,
     app_version: &str,
-) -> Result<SignatureSource, VerifyError> {
-    let asset_name = match channel {
-        DistributionChannel::Installer => INSTALLER_EXE_SIGNATURE_ASSET,
-        DistributionChannel::Portable => PORTABLE_EXE_SIGNATURE_ASSET,
+) -> Result<Vec<SignatureSource>, VerifyError> {
+    let asset_names: &[&'static str] = match channel {
+        // 安装版可能来自常规安装包，也可能来自内置 WebView2 离线安装包；两者由不同打包步骤生成，exe 字节不一定相同。
+        DistributionChannel::Installer => &[
+            INSTALLER_EXE_SIGNATURE_ASSET,
+            WEBVIEW2_OFFLINE_EXE_SIGNATURE_ASSET,
+        ],
+        DistributionChannel::Portable => &[PORTABLE_EXE_SIGNATURE_ASSET],
     };
-    fetch_signature_asset(app_version, asset_name).await
+
+    let mut signatures = Vec::new();
+    let mut last_error: Option<VerifyError> = None;
+    for asset_name in asset_names {
+        match fetch_signature_asset(app_version, asset_name).await {
+            Ok(signature) => signatures.push(signature),
+            Err(VerifyError::ReleaseUnavailable(error)) => {
+                // 新旧 Release 资产可能不完全一致，单个候选缺失不应阻断其他官方签名继续校验。
+                last_error = Some(VerifyError::ReleaseUnavailable(error));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    if signatures.is_empty() {
+        return Err(last_error.unwrap_or_else(|| {
+            VerifyError::ReleaseUnavailable(format!(
+                "当前版本 v{} 尚未发布可用的官方签名资产。",
+                app_version
+            ))
+        }));
+    }
+
+    Ok(signatures)
 }
 
 async fn fetch_signature_asset(
     app_version: &str,
-    asset_name: &str,
+    asset_name: &'static str,
 ) -> Result<SignatureSource, VerifyError> {
     let signature_url = release_asset_url(app_version, asset_name);
     let response = reqwest::Client::new()
@@ -142,7 +171,10 @@ async fn fetch_signature_asset(
         .await
         .map_err(|error| VerifyError::Network(error.to_string()))?;
 
-    Ok(SignatureSource { signature })
+    Ok(SignatureSource {
+        asset_name,
+        signature,
+    })
 }
 
 fn release_asset_url(app_version: &str, asset_name: &str) -> String {
@@ -151,6 +183,39 @@ fn release_asset_url(app_version: &str, asset_name: &str) -> String {
         "https://github.com/Chunyu33/light-c/releases/download/v{}/{}",
         app_version, asset_name
     )
+}
+
+fn verify_exe_signatures(
+    exe_bytes: &[u8],
+    signature_sources: &[SignatureSource],
+) -> Result<(), VerifyError> {
+    let mut invalid_errors = Vec::new();
+    let mut format_errors = Vec::new();
+
+    for source in signature_sources {
+        match verify_exe_signature(exe_bytes, &source.signature) {
+            Ok(()) => return Ok(()),
+            Err(VerifyError::InvalidSignature(message)) => {
+                invalid_errors.push(format!("{}: {}", source.asset_name, message));
+            }
+            Err(VerifyError::SignatureFormat(message)) => {
+                format_errors.push(format!("{}: {}", source.asset_name, message));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    if !invalid_errors.is_empty() {
+        return Err(VerifyError::InvalidSignature(format!(
+            "当前 LightC.exe 未匹配到该版本的官方 exe 签名资产。可能是文件来源不一致、文件被修改，或 Release 签名资产需要修复：{}",
+            invalid_errors.join("；")
+        )));
+    }
+
+    Err(VerifyError::SignatureFormat(format!(
+        "所有候选签名文件格式均异常：{}",
+        format_errors.join("；")
+    )))
 }
 
 fn verify_exe_signature(exe_bytes: &[u8], signature_text: &str) -> Result<(), VerifyError> {
@@ -166,7 +231,7 @@ fn verify_exe_signature(exe_bytes: &[u8], signature_text: &str) -> Result<(), Ve
         .verify(exe_bytes, &signature, true)
         .map_err(|error| {
             VerifyError::InvalidSignature(format!(
-                "签名与当前 LightC.exe 不一致，文件可能被修改或不是官方构建：{}",
+                "签名与当前 LightC.exe 不一致：{}",
                 error
             ))
         })
