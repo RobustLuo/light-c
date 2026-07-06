@@ -1242,7 +1242,7 @@ function SecuritySettings() {
       } else if (result.status === 'signature_error') {
         showToast({ type: 'error', title: '签名资产异常', description: '官方签名文件格式异常，请等待作者修复发布资产。' });
       } else {
-        showToast({ type: 'error', title: '校验未通过', description: '建议从官方渠道重新下载。' });
+        showToast({ type: 'error', title: '校验未通过', description: '当前文件未匹配到对应版本的官方 exe 签名。' });
       }
     } catch (error) {
       setVerifyResult({
@@ -1445,8 +1445,11 @@ function VerifyIntegrityResultCard({ result }: { result: VerifyIntegrityResult }
       <div className="flex items-start gap-3">
         <XCircle className="w-4 h-4 text-[var(--color-danger)] mt-0.5 shrink-0" />
         <div className="min-w-0">
-          <p className="text-sm font-medium text-[var(--color-danger)]">文件已被篡改，请从官方渠道重新下载</p>
+          <p className="text-sm font-medium text-[var(--color-danger)]">签名与当前文件不匹配</p>
           <p className="text-xs text-[var(--text-muted)] mt-1 break-all">{result.message}</p>
+          <p className="text-xs text-[var(--text-muted)] mt-2">
+            可能原因包括：文件来源不一致、文件被修改，或当前 Release 的 exe 签名资产需要作者重新上传。
+          </p>
           <a
             href={result.official_url}
             target="_blank"
