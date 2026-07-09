@@ -50,7 +50,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'LightC v2.11.2'
+          releaseName: 'LightC v2.11.3'
           releaseBody: |
             ## 更新内容
             - 调整常规安装包 WebView2 策略：缺失时提示使用离线包，不再自动联网下载
