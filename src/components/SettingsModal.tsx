@@ -96,7 +96,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       />
 
       {/* 弹窗内容 - 微信风格卡片布局 */}
-      <div className={`relative w-[600px] min-h-[450px] max-h-[80vh] bg-[var(--bg-card)] rounded-2xl shadow-2xl flex overflow-hidden ${isVisible ? 'modal-content-in' : enteredRef.current ? 'modal-content-out' : 'opacity-0'}`}>
+      <div className={`relative h-[80vh] w-[76vw] min-h-0 min-w-0 max-h-[calc(100vh-24px)] max-w-[calc(100vw-24px)] bg-[var(--bg-card)] rounded-2xl shadow-2xl flex overflow-hidden ${isVisible ? 'modal-content-in' : enteredRef.current ? 'modal-content-out' : 'opacity-0'}`}>
         {/* 左侧导航 - 使用主背景色 */}
         {/* === 🐛 核心修复点：添加 shrink-0，禁止菜单缩小以适应右侧的长代码块 === */}
         <div className="w-[160px] shrink-0 bg-[var(--bg-main)] border-r border-[var(--border-color)] py-4">
