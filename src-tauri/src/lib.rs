@@ -133,6 +133,7 @@ pub fn run() {
             pick_folder_dialog,
             // AI 资产分析
             scan_ai_model_assets,
+            delete_ai_model,
         ])
         .run(tauri::generate_context!())
         .expect("启动应用程序时发生错误");

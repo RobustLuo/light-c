@@ -1401,6 +1401,11 @@ export async function scanAiModelAssets(enableDeepDiscovery: boolean): Promise<A
   return invoke<AiModelScanResult>('scan_ai_model_assets', { enableDeepDiscovery });
 }
 
+/** 删除单个 AI 模型文件，后端会再次校验模型格式和文件安全边界。 */
+export async function deleteAiModel(path: string): Promise<EnhancedDeleteResult> {
+  return invoke<EnhancedDeleteResult>('delete_ai_model', { path });
+}
+
 // ============================================================================
 // 鏁版嵁鐩綍绠＄悊 API
 // ============================================================================
