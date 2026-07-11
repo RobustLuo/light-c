@@ -242,8 +242,10 @@ export interface DriverPackageInfo {
   driver_store_path: string;
   device_count: number;
   active_device_count: number;
+  installed_device_count: number;
+  outranked_device_count: number;
   file_count: number;
-  status: 'recommended' | 'in_use' | 'no_newer_version' | 'unknown';
+  status: 'old_confirmed' | 'recommended' | 'in_use' | 'no_newer_version' | 'unknown';
   actionable: boolean;
   reason: string;
 }
@@ -253,6 +255,8 @@ export interface DriverScanResult {
   packages: DriverPackageInfo[];
   total_count: number;
   candidate_count: number;
+  high_confidence_count: number;
+  device_match_data_available: boolean;
 }
 
 export interface DriverDeleteDetail {

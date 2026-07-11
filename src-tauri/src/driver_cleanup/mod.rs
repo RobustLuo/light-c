@@ -34,6 +34,8 @@ pub struct DriverPackageInfo {
     pub driver_store_path: String,
     pub device_count: usize,
     pub active_device_count: usize,
+    pub installed_device_count: usize,
+    pub outranked_device_count: usize,
     pub file_count: usize,
     pub status: String,
     pub actionable: bool,
@@ -46,6 +48,8 @@ pub struct DriverScanResult {
     pub packages: Vec<DriverPackageInfo>,
     pub total_count: usize,
     pub candidate_count: usize,
+    pub high_confidence_count: usize,
+    pub device_match_data_available: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -89,6 +93,12 @@ struct RawDriverPackage {
 }
 
 #[derive(Debug, Default)]
+struct RawDeviceMatch {
+    installed_driver_name: String,
+    outranked_driver_names: Vec<String>,
+}
+
+#[derive(Debug, Default)]
 struct PnputilOutput {
     stdout: String,
     stderr: String,
@@ -96,14 +106,28 @@ struct PnputilOutput {
 
 pub fn scan() -> Result<DriverScanResult, String> {
     let raw_packages = enumerate_driver_packages()?;
-    let packages = classify_packages(raw_packages);
+    let (device_matches, device_match_data_available) = match enumerate_device_matches() {
+        Ok(matches) => (matches, true),
+        Err(error) => {
+            // 设备匹配 XML 只用于提高判定置信度；失败时保留基础扫描结果，避免影响旧系统检测。
+            warn!("读取设备驱动匹配关系失败，将使用保守基础判定: {}", error);
+            (Vec::new(), false)
+        }
+    };
+    let packages = classify_packages(raw_packages, &device_matches);
     let candidate_count = packages.iter().filter(|package| package.actionable).count();
+    let high_confidence_count = packages
+        .iter()
+        .filter(|package| package.status == "old_confirmed")
+        .count();
 
     Ok(DriverScanResult {
         is_admin: crate::system_slim::check_admin(),
         total_count: packages.len(),
         packages,
         candidate_count,
+        high_confidence_count,
+        device_match_data_available,
     })
 }
 
@@ -295,8 +319,54 @@ fn enumerate_driver_packages() -> Result<Vec<RawDriverPackage>, String> {
     result
 }
 
-fn classify_packages(raw_packages: Vec<RawDriverPackage>) -> Vec<DriverPackageInfo> {
+fn enumerate_device_matches() -> Result<Vec<RawDeviceMatch>, String> {
+    let xml_path = temporary_xml_path();
+    let xml_path_text = xml_path.to_string_lossy().to_string();
+    let result = (|| {
+        let output = run_pnputil(&[
+            "/enum-devices",
+            "/drivers",
+            "/format",
+            "xml",
+            "/output-file",
+            &xml_path_text,
+        ])?;
+        if !output.status_success {
+            return Err(format!(
+                "枚举设备驱动匹配关系失败: {}",
+                format_command_output(&output.output)
+            ));
+        }
+        parse_device_matches_xml(&xml_path)
+    })();
+
+    if let Err(error) = fs::remove_file(&xml_path) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            warn!("删除临时设备匹配文件失败 {}: {}", xml_path.display(), error);
+        }
+    }
+    result
+}
+
+fn classify_packages(
+    raw_packages: Vec<RawDriverPackage>,
+    device_matches: &[RawDeviceMatch],
+) -> Vec<DriverPackageInfo> {
     let mut family_versions: HashMap<String, Vec<Vec<u64>>> = HashMap::new();
+    let mut installed_device_counts: HashMap<String, usize> = HashMap::new();
+    let mut outranked_device_counts: HashMap<String, usize> = HashMap::new();
+    for device in device_matches {
+        let installed_name = device.installed_driver_name.to_ascii_lowercase();
+        if is_published_driver_name(&installed_name) {
+            *installed_device_counts.entry(installed_name).or_default() += 1;
+        }
+        for driver_name in &device.outranked_driver_names {
+            let normalized_name = driver_name.to_ascii_lowercase();
+            if is_published_driver_name(&normalized_name) {
+                *outranked_device_counts.entry(normalized_name).or_default() += 1;
+            }
+        }
+    }
     for package in &raw_packages {
         if let (Some(version), false) = (
             parse_driver_version(&package.driver_version),
@@ -322,6 +392,18 @@ fn classify_packages(raw_packages: Vec<RawDriverPackage>) -> Vec<DriverPackageIn
                         compare_versions(candidate, current_version) == Ordering::Greater
                     })
             });
+            let published_name = package.published_name.to_ascii_lowercase();
+            let installed_device_count = installed_device_counts
+                .get(&published_name)
+                .copied()
+                .unwrap_or_default();
+            let outranked_device_count = outranked_device_counts
+                .get(&published_name)
+                .copied()
+                .unwrap_or_default();
+            let high_confidence_old = installed_device_count == 0
+                && outranked_device_count > 0
+                && package.active_device_count == 0;
             let (status, actionable, reason) = if package.active_device_count > 0 {
                 (
                     "in_use",
@@ -329,6 +411,15 @@ fn classify_packages(raw_packages: Vec<RawDriverPackage>) -> Vec<DriverPackageIn
                     format!(
                         "有 {} 个设备处于活动状态，不能删除正在使用的驱动包",
                         package.active_device_count
+                    ),
+                )
+            } else if high_confidence_old {
+                (
+                    "old_confirmed",
+                    true,
+                    format!(
+                        "在 {} 个设备的匹配列表中被更高排名驱动替代，当前没有设备使用此包",
+                        outranked_device_count
                     ),
                 )
             } else if package.family_id.trim().is_empty() || parsed_version.is_none() {
@@ -362,6 +453,8 @@ fn classify_packages(raw_packages: Vec<RawDriverPackage>) -> Vec<DriverPackageIn
                 driver_store_path: build_driver_store_path(&package.driver_package_id),
                 device_count: package.device_count,
                 active_device_count: package.active_device_count,
+                installed_device_count,
+                outranked_device_count,
                 file_count: package.file_count,
                 status: status.to_string(),
                 actionable,
@@ -369,6 +462,16 @@ fn classify_packages(raw_packages: Vec<RawDriverPackage>) -> Vec<DriverPackageIn
             }
         })
         .collect()
+}
+
+fn is_published_driver_name(name: &str) -> bool {
+    let lower = name.trim().to_ascii_lowercase();
+    let number_part = lower
+        .strip_prefix("oem")
+        .and_then(|value| value.strip_suffix(".inf"));
+    number_part.is_some_and(|value| {
+        !value.is_empty() && value.chars().all(|character| character.is_ascii_digit())
+    })
 }
 
 fn validate_selected_packages(
@@ -601,6 +704,108 @@ fn parse_driver_xml(path: &Path) -> Result<Vec<RawDriverPackage>, String> {
     Ok(packages)
 }
 
+fn parse_device_matches_xml(path: &Path) -> Result<Vec<RawDeviceMatch>, String> {
+    let mut reader = Reader::from_file(path)
+        .map_err(|error| format!("读取设备匹配 XML 失败 {}: {}", path.display(), error))?;
+    reader.config_mut().trim_text(true);
+    let mut buffer = Vec::new();
+    let mut current_device: Option<RawDeviceMatch> = None;
+    let mut current_driver_name = String::new();
+    let mut current_driver_status = String::new();
+    let mut current_matching_driver = false;
+    let mut current_text_element: Option<String> = None;
+    let mut current_text = String::new();
+    let mut matches = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(Event::Start(event)) => {
+                let element_name = event.local_name().as_ref().to_vec();
+                if element_name == b"Device" {
+                    current_device = Some(RawDeviceMatch::default());
+                } else if element_name == b"DriverName" {
+                    let driver_name = read_attribute(&event, b"DriverName")?;
+                    if driver_name.is_empty() {
+                        // 设备当前驱动使用文本节点，匹配驱动使用 DriverName 属性。
+                        current_matching_driver = false;
+                        current_text_element = Some("DriverName".to_string());
+                        current_text.clear();
+                    } else {
+                        current_matching_driver = true;
+                        current_driver_name = driver_name;
+                        current_driver_status.clear();
+                    }
+                } else if element_name == b"Status" {
+                    current_text_element = Some("Status".to_string());
+                    current_text.clear();
+                }
+            }
+            Ok(Event::Text(event)) => {
+                if current_text_element.is_some() {
+                    current_text.push_str(
+                        &event
+                            .decode()
+                            .map_err(|error| format!("解析设备匹配 XML 文本失败: {}", error))?,
+                    );
+                }
+            }
+            Ok(Event::End(event)) => {
+                let element_name = event.local_name();
+                if let Some(text_element) = current_text_element.as_deref() {
+                    if text_element.as_bytes() == element_name.as_ref() {
+                        if text_element == "DriverName" {
+                            if current_driver_name.is_empty() {
+                                current_driver_name = current_text.trim().to_string();
+                            }
+                        } else if text_element == "Status" {
+                            current_driver_status = current_text.trim().to_string();
+                            if current_matching_driver {
+                                if let Some(device) = current_device.as_mut() {
+                                    if current_driver_status.contains("Outranked") {
+                                        device
+                                            .outranked_driver_names
+                                            .push(current_driver_name.clone());
+                                    } else if current_driver_status.contains("BestRanked/Installed")
+                                        || current_driver_status == "BestRanked"
+                                    {
+                                        device.installed_driver_name = current_driver_name.clone();
+                                    }
+                                }
+                                current_driver_name.clear();
+                                current_driver_status.clear();
+                                current_matching_driver = false;
+                            }
+                        }
+                        current_text_element = None;
+                        current_text.clear();
+                    }
+                }
+                if element_name.as_ref() == b"DriverName"
+                    && !current_matching_driver
+                    && !current_driver_name.is_empty()
+                {
+                    if let Some(device) = current_device.as_mut() {
+                        // 设备节点下的文本 DriverName 就是当前已安装驱动，不能和匹配候选的属性节点混淆。
+                        device.installed_driver_name = current_driver_name.clone();
+                    }
+                    current_driver_name.clear();
+                    current_driver_status.clear();
+                }
+                if element_name.as_ref() == b"Device" {
+                    if let Some(device) = current_device.take() {
+                        matches.push(device);
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(error) => return Err(format!("解析设备匹配 XML 失败: {}", error)),
+            _ => {}
+        }
+        buffer.clear();
+    }
+    Ok(matches)
+}
+
 fn is_driver_text_element(name: &[u8]) -> bool {
     matches!(
         name,
@@ -760,8 +965,12 @@ fn format_command_output(output: &PnputilOutput) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{compare_versions, normalize_published_names, parse_driver_version};
+    use super::{
+        compare_versions, normalize_published_names, parse_device_matches_xml, parse_driver_version,
+    };
     use std::cmp::Ordering;
+    use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn parses_pnputil_version_with_date_prefix() {
@@ -784,5 +993,36 @@ mod tests {
             normalize_published_names(&["OEM12.INF".to_string()]).unwrap(),
             vec!["oem12.inf"]
         );
+    }
+
+    #[test]
+    fn parses_current_and_outranked_device_drivers() {
+        let path = PathBuf::from(std::env::temp_dir()).join(format!(
+            "lightc_driver_match_test_{}_{}.xml",
+            std::process::id(),
+            1
+        ));
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<PnpUtil>
+  <Device>
+    <DeviceDescription>Test device</DeviceDescription>
+    <DriverName>oem10.inf</DriverName>
+    <MatchingDrivers>
+      <DriverName DriverName="oem10.inf">
+        <Status>BestRanked/Installed</Status>
+      </DriverName>
+      <DriverName DriverName="oem3.inf">
+        <Status>Outranked</Status>
+      </DriverName>
+    </MatchingDrivers>
+  </Device>
+</PnpUtil>"#;
+        fs::write(&path, xml).expect("write test XML");
+        let result = parse_device_matches_xml(&path).expect("parse test XML");
+        fs::remove_file(&path).expect("remove test XML");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].installed_driver_name, "oem10.inf");
+        assert_eq!(result[0].outranked_driver_names, vec!["oem3.inf"]);
     }
 }
