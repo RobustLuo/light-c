@@ -133,10 +133,10 @@ const CLEARABLE_DATA_DEFINITIONS: [ClearableDataDefinition; 4] = [
     ClearableDataDefinition {
         id: "driver_backups",
         label: "驱动备份",
-        description: "旧驱动清理前导出的驱动包备份。",
+        description: "旧驱动清理前导出的驱动包备份，文件可能较大。",
         relative_path: "driver_backups",
         item_type: ClearableDataType::DirectoryContents,
-        warning: Some("删除后无法使用这些备份重新安装被清理的驱动包。"),
+        warning: Some("删除后将无法使用这些备份手动恢复已清理的驱动包。默认不会勾选。"),
     },
 ];
 

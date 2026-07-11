@@ -83,6 +83,7 @@ pub fn run() {
             // 旧驱动清理
             scan_old_drivers,
             delete_old_drivers,
+            restore_all_driver_backups,
             open_driver_backup_dir,
             // 健康评分
             get_health_score,

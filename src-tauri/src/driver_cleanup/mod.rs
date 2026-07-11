@@ -14,8 +14,13 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{LazyLock, Mutex};
+use walkdir::WalkDir;
 
 const DRIVER_BACKUP_DIR: &str = "driver_backups";
+
+// 删除操作会修改系统 Driver Store，串行化后端请求可以避免两个清理任务交叉备份或删除。
+static DRIVER_DELETE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DriverPackageInfo {
@@ -27,6 +32,7 @@ pub struct DriverPackageInfo {
     pub family_id: String,
     pub signer_name: String,
     pub device_count: usize,
+    pub active_device_count: usize,
     pub file_count: usize,
     pub status: String,
     pub actionable: bool,
@@ -37,7 +43,7 @@ pub struct DriverPackageInfo {
 pub struct DriverScanResult {
     pub is_admin: bool,
     pub packages: Vec<DriverPackageInfo>,
-    pub recommended_count: usize,
+    pub candidate_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -57,6 +63,14 @@ pub struct DriverDeleteResult {
     pub details: Vec<DriverDeleteDetail>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct DriverRestoreResult {
+    pub backup_directory: String,
+    pub success: bool,
+    pub needs_reboot: bool,
+    pub message: String,
+}
+
 #[derive(Debug, Default)]
 struct RawDriverPackage {
     published_name: String,
@@ -67,6 +81,7 @@ struct RawDriverPackage {
     family_id: String,
     signer_name: String,
     device_count: usize,
+    active_device_count: usize,
     file_count: usize,
 }
 
@@ -79,16 +94,71 @@ struct PnputilOutput {
 pub fn scan() -> Result<DriverScanResult, String> {
     let raw_packages = enumerate_driver_packages()?;
     let packages = classify_packages(raw_packages);
-    let recommended_count = packages.iter().filter(|package| package.actionable).count();
+    let candidate_count = packages.iter().filter(|package| package.actionable).count();
 
     Ok(DriverScanResult {
         is_admin: crate::system_slim::check_admin(),
         packages,
-        recommended_count,
+        candidate_count,
+    })
+}
+
+pub fn restore_all_backups() -> Result<DriverRestoreResult, String> {
+    let _delete_guard = DRIVER_DELETE_LOCK
+        .lock()
+        .map_err(|_| "驱动清理锁异常，请重启 LightC 后重试".to_string())?;
+
+    if !crate::system_slim::check_admin() {
+        return Err("恢复驱动包需要管理员权限，请以管理员身份运行 LightC".to_string());
+    }
+
+    let backup_directory = crate::data_dir::get_data_dir().join(DRIVER_BACKUP_DIR);
+    if !backup_directory.is_dir() {
+        return Err(format!(
+            "当前数据目录没有找到驱动备份目录: {}",
+            backup_directory.display()
+        ));
+    }
+
+    let inf_files = collect_backup_inf_files(&backup_directory)?;
+    if inf_files.is_empty() {
+        return Err(format!(
+            "当前驱动备份目录中没有找到 INF 文件: {}",
+            backup_directory.display()
+        ));
+    }
+
+    // 只启动一次 pnputil，减少恢复大量驱动时的进程开销；先枚举用于校验目录确实包含备份。
+    let driver_pattern = backup_directory
+        .join("*.inf")
+        .to_string_lossy()
+        .into_owned();
+    let output = run_pnputil([
+        "/add-driver".to_string(),
+        driver_pattern,
+        "/subdirs".to_string(),
+        "/install".to_string(),
+    ])?;
+    let command_message = format_command_output(&output.output);
+    let message = format!("已发现 {} 个备份 INF。{}", inf_files.len(), command_message);
+    let output_lower = command_message.to_ascii_lowercase();
+    let needs_reboot = output_lower.contains("restart")
+        || output_lower.contains("reboot")
+        || command_message.contains("重启");
+
+    Ok(DriverRestoreResult {
+        backup_directory: backup_directory.to_string_lossy().to_string(),
+        success: output.status_success,
+        needs_reboot,
+        message,
     })
 }
 
 pub fn delete(published_names: Vec<String>) -> Result<DriverDeleteResult, String> {
+    let _delete_guard = DRIVER_DELETE_LOCK
+        .lock()
+        .map_err(|_| "驱动清理锁异常，请重启 LightC 后重试".to_string())?;
+
     if published_names.is_empty() {
         return Err("未选择要清理的驱动包".to_string());
     }
@@ -109,9 +179,12 @@ pub fn delete(published_names: Vec<String>) -> Result<DriverDeleteResult, String
     let mut details = Vec::with_capacity(selected_packages.len());
     let mut needs_reboot = false;
     for package in selected_packages {
-        let output = run_pnputil(&["/delete-driver", package.published_name.as_str()])?;
-        let command_success = output.status_success;
-        let output_text = format_command_output(&output.output);
+        let published_name = package.published_name;
+        let command_result = run_pnputil(&["/delete-driver", published_name.as_str()]);
+        let (command_success, output_text) = match command_result {
+            Ok(output) => (output.status_success, format_command_output(&output.output)),
+            Err(error) => (false, error),
+        };
         if output_text.to_ascii_lowercase().contains("restart")
             || output_text.to_ascii_lowercase().contains("reboot")
             || output_text.contains("重启")
@@ -120,7 +193,7 @@ pub fn delete(published_names: Vec<String>) -> Result<DriverDeleteResult, String
         }
 
         details.push(DriverDeleteDetail {
-            published_name: package.published_name,
+            published_name,
             success: command_success,
             verified_removed: false,
             error_message: if command_success {
@@ -132,15 +205,31 @@ pub fn delete(published_names: Vec<String>) -> Result<DriverDeleteResult, String
     }
 
     // 一次复核所有删除结果，避免每个包都重新调用 pnputil，减少系统 IO 和进程开销。
-    let remaining_names = enumerate_driver_packages()?
-        .into_iter()
-        .map(|package| package.published_name)
-        .collect::<std::collections::HashSet<_>>();
-    for detail in &mut details {
-        detail.verified_removed = !remaining_names.contains(&detail.published_name);
-        if detail.success && !detail.verified_removed {
-            detail.success = false;
-            detail.error_message = Some("pnputil 已执行，但重新检测仍发现该驱动包".to_string());
+    match enumerate_driver_packages() {
+        Ok(packages) => {
+            let remaining_names = packages
+                .into_iter()
+                .map(|package| package.published_name.to_ascii_lowercase())
+                .collect::<std::collections::HashSet<_>>();
+            for detail in &mut details {
+                detail.verified_removed =
+                    !remaining_names.contains(&detail.published_name.to_ascii_lowercase());
+                if detail.success && !detail.verified_removed {
+                    detail.success = false;
+                    detail.error_message =
+                        Some("pnputil 已执行，但重新检测仍发现该驱动包".to_string());
+                }
+            }
+        }
+        Err(error) => {
+            // 删除命令已经执行，复核失败不能伪装成删除失败，只能明确提示用户重新检测。
+            for detail in &mut details {
+                if detail.success {
+                    detail.success = false;
+                    detail.error_message =
+                        Some(format!("删除命令已执行，但删除后复核失败: {}", error));
+                }
+            }
         }
     }
 
@@ -208,7 +297,7 @@ fn classify_packages(raw_packages: Vec<RawDriverPackage>) -> Vec<DriverPackageIn
             package.family_id.trim().is_empty(),
         ) {
             family_versions
-                .entry(package.family_id.clone())
+                .entry(package.family_id.to_ascii_lowercase())
                 .or_default()
                 .push(version);
         }
@@ -220,27 +309,27 @@ fn classify_packages(raw_packages: Vec<RawDriverPackage>) -> Vec<DriverPackageIn
             let parsed_version = parse_driver_version(&package.driver_version);
             let has_newer_version = parsed_version.as_ref().is_some_and(|current_version| {
                 family_versions
-                    .get(&package.family_id)
+                    .get(&package.family_id.to_ascii_lowercase())
                     .into_iter()
                     .flatten()
                     .any(|candidate| {
                         compare_versions(candidate, current_version) == Ordering::Greater
                     })
             });
-            let (status, actionable, reason) = if package.device_count > 0 {
+            let (status, actionable, reason) = if package.active_device_count > 0 {
                 (
                     "in_use",
                     false,
                     format!(
-                        "已关联 {} 个设备，不能删除正在使用的驱动包",
-                        package.device_count
+                        "有 {} 个设备处于活动状态，不能删除正在使用的驱动包",
+                        package.active_device_count
                     ),
                 )
             } else if package.family_id.trim().is_empty() || parsed_version.is_none() {
                 (
                     "unknown",
-                    false,
-                    "缺少可用于版本判断的驱动族或版本信息，暂不建议删除".to_string(),
+                    true,
+                    "未关联设备，但版本信息不完整，请确认后再删除".to_string(),
                 )
             } else if has_newer_version {
                 (
@@ -251,8 +340,8 @@ fn classify_packages(raw_packages: Vec<RawDriverPackage>) -> Vec<DriverPackageIn
             } else {
                 (
                     "no_newer_version",
-                    false,
-                    "未关联设备，但未确认存在更新版本，暂不建议删除".to_string(),
+                    true,
+                    "未关联设备，未发现更高版本；删除后将从 Driver Store 移除该包".to_string(),
                 )
             };
 
@@ -265,6 +354,7 @@ fn classify_packages(raw_packages: Vec<RawDriverPackage>) -> Vec<DriverPackageIn
                 family_id: package.family_id,
                 signer_name: package.signer_name,
                 device_count: package.device_count,
+                active_device_count: package.active_device_count,
                 file_count: package.file_count,
                 status: status.to_string(),
                 actionable,
@@ -339,17 +429,45 @@ fn export_driver_package(published_name: &str, backup_directory: &Path) -> Resul
     }
 }
 
+fn collect_backup_inf_files(backup_directory: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut inf_files = Vec::new();
+    for entry in WalkDir::new(backup_directory).follow_links(false) {
+        let entry = entry.map_err(|error| format!("读取驱动备份目录失败: {}", error))?;
+        if entry.file_type().is_file()
+            && entry
+                .path()
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("inf"))
+        {
+            inf_files.push(entry.into_path());
+        }
+    }
+    inf_files.sort_unstable_by(|left, right| {
+        left.to_string_lossy()
+            .to_ascii_lowercase()
+            .cmp(&right.to_string_lossy().to_ascii_lowercase())
+    });
+    Ok(inf_files)
+}
+
 fn create_backup_directory() -> Result<PathBuf, String> {
     let directory = crate::data_dir::get_data_dir()
         .join(DRIVER_BACKUP_DIR)
         .join(format!(
-            "{}-{}",
-            Local::now().format("%Y%m%d_%H%M%S"),
-            std::process::id()
+            "{}-{}-{}",
+            Local::now().format("%Y%m%d_%H%M%S_%f"),
+            std::process::id(),
+            unique_backup_suffix()
         ));
     fs::create_dir_all(&directory)
         .map_err(|error| format!("创建驱动备份目录失败 {}: {}", directory.display(), error))?;
     Ok(directory)
+}
+
+fn unique_backup_suffix() -> u32 {
+    // 纳秒并非所有文件系统都保留，但可显著降低同一进程连续操作的目录碰撞概率。
+    Local::now().timestamp_subsec_nanos()
 }
 
 fn temporary_xml_path() -> PathBuf {
@@ -368,6 +486,7 @@ fn parse_driver_xml(path: &Path) -> Result<Vec<RawDriverPackage>, String> {
     let mut current_package: Option<RawDriverPackage> = None;
     let mut current_text_element: Option<String> = None;
     let mut current_text = String::new();
+    let mut current_device_open = false;
     let mut packages = Vec::new();
 
     loop {
@@ -382,6 +501,7 @@ fn parse_driver_xml(path: &Path) -> Result<Vec<RawDriverPackage>, String> {
                 } else if let Some(package) = current_package.as_mut() {
                     if element_name == b"Device" {
                         package.device_count += 1;
+                        current_device_open = true;
                     } else if element_name == b"File" {
                         package.file_count += 1;
                     } else if is_driver_text_element(&element_name) {
@@ -396,6 +516,7 @@ fn parse_driver_xml(path: &Path) -> Result<Vec<RawDriverPackage>, String> {
                 if let Some(package) = current_package.as_mut() {
                     if element_name.as_ref() == b"Device" {
                         package.device_count += 1;
+                        current_device_open = false;
                     } else if element_name.as_ref() == b"File" {
                         package.file_count += 1;
                     }
@@ -415,11 +536,20 @@ fn parse_driver_xml(path: &Path) -> Result<Vec<RawDriverPackage>, String> {
                 if let Some(text_element) = current_text_element.as_deref() {
                     if text_element.as_bytes() == element_name.as_ref() {
                         if let Some(package) = current_package.as_mut() {
-                            assign_driver_text(package, text_element, &current_text);
+                            if text_element == "Status" && current_device_open {
+                                if is_active_device_status(&current_text) {
+                                    package.active_device_count += 1;
+                                }
+                            } else {
+                                assign_driver_text(package, text_element, &current_text);
+                            }
                         }
                         current_text_element = None;
                         current_text.clear();
                     }
+                }
+                if element_name.as_ref() == b"Device" {
+                    current_device_open = false;
                 }
                 if element_name.as_ref() == b"Driver" {
                     if let Some(package) = current_package.take() {
@@ -445,6 +575,15 @@ fn is_driver_text_element(name: &[u8]) -> bool {
             | b"DriverVersion"
             | b"FamilyId"
             | b"SignerName"
+            | b"Status"
+    )
+}
+
+fn is_active_device_status(status: &str) -> bool {
+    // 只有 Windows 明确报告设备已启动或正在运行时才禁止删除，避免把已断开设备误判为在用。
+    matches!(
+        status.trim().to_ascii_lowercase().as_str(),
+        "started" | "running"
     )
 }
 
@@ -511,7 +650,11 @@ struct CommandResult {
     output: PnputilOutput,
 }
 
-fn run_pnputil(arguments: &[&str]) -> Result<CommandResult, String> {
+fn run_pnputil<I, S>(arguments: I) -> Result<CommandResult, String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
     #[cfg(target_os = "windows")]
     {
         let output = Command::new(pnputil_path())

@@ -1,10 +1,10 @@
 // ============================================================================
 // 旧驱动清理模块
-// 只允许处理后端判定为“未关联设备且已有更新版本”的驱动包。
+// 正在使用的驱动包由后端锁定，其他未关联活动设备的条目交由用户确认。
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Archive, CheckCircle2, Cpu, FolderOpen, Loader2, ShieldAlert, Trash2 } from 'lucide-react';
+import { Archive, CheckCircle2, Cpu, FolderOpen, Loader2, RotateCcw, ShieldAlert, Trash2 } from 'lucide-react';
 import { ModuleCard } from '../ModuleCard';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { EmptyState } from '../EmptyState';
@@ -13,7 +13,7 @@ import { useModuleDashboard } from '../../contexts/DashboardContext';
 import {
   deleteOldDrivers,
   openDriverBackupDir,
-  recordCleanupAction,
+  restoreAllDriverBackups,
   scanOldDrivers,
   type DriverPackageInfo,
   type DriverScanResult,
@@ -23,13 +23,31 @@ import { shouldSkipInactivePageRender, type ModuleRenderProps } from './modulePr
 function getStatusLabel(packageInfo: DriverPackageInfo): string {
   switch (packageInfo.status) {
     case 'recommended':
-      return '建议清理';
+      return '可优先清理';
     case 'in_use':
       return '正在使用';
     case 'no_newer_version':
       return '未确认过时';
     default:
-      return '暂不处理';
+      return '信息不完整';
+  }
+}
+
+function getStatusClass(packageInfo: DriverPackageInfo): string {
+  switch (packageInfo.status) {
+    case 'recommended': return 'bg-emerald-500/10 text-emerald-600';
+    case 'in_use': return 'bg-rose-500/10 text-rose-600';
+    case 'no_newer_version': return 'bg-amber-500/10 text-amber-700';
+    default: return 'bg-sky-500/10 text-sky-700';
+  }
+}
+
+function getPackageCardClass(packageInfo: DriverPackageInfo): string {
+  switch (packageInfo.status) {
+    case 'in_use': return 'border-rose-500/20 bg-rose-500/[0.03]';
+    case 'no_newer_version': return 'border-amber-500/20 bg-amber-500/[0.03]';
+    case 'unknown': return 'border-sky-500/20 bg-sky-500/[0.03]';
+    default: return 'border-[var(--border-default)] hover:border-emerald-500/40';
   }
 }
 
@@ -42,6 +60,8 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const loadDrivers = useCallback(async () => {
     setLoading(true);
@@ -52,7 +72,7 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
       setSelectedNames(new Set());
       updateModuleState('driverCleanup', {
         status: 'done',
-        fileCount: result.recommended_count,
+        fileCount: result.candidate_count,
         totalSize: 0,
       });
       setExpandedModule('driver-cleanup');
@@ -85,23 +105,9 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
     try {
       const names = Array.from(selectedNames);
       const result = await deleteOldDrivers(names);
-      const detailByName = new Map(result.details.map((detail) => [detail.published_name, detail]));
-      void recordCleanupAction(names.map((name) => {
-        const detail = detailByName.get(name);
-        return {
-          category: '旧驱动清理',
-          path: name,
-          size: 0,
-          success: detail?.success ?? false,
-          error_message: detail?.error_message ?? undefined,
-        };
-      })).catch((error) => {
-        showToast({ title: '清理日志记录失败', description: String(error), type: 'warning' });
-      });
-
       showToast({
         title: result.failed_count === 0 ? '驱动清理完成' : '驱动清理部分完成',
-        description: `成功 ${result.success_count} 个，失败 ${result.failed_count} 个。已创建备份，可重新检测确认结果。`,
+        description: `成功 ${result.success_count} 个，失败 ${result.failed_count} 个。备份位置：${result.backup_directory}。可重新检测确认结果。`,
         type: result.failed_count === 0 ? 'success' : 'warning',
       });
       if (result.needs_reboot) {
@@ -116,25 +122,48 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
     }
   }, [loadDrivers, selectedNames, showToast]);
 
+  const handleRestore = useCallback(async () => {
+    setShowRestoreConfirm(false);
+    setRestoring(true);
+    try {
+      const result = await restoreAllDriverBackups();
+      showToast({
+        title: result.success ? '驱动恢复命令已执行' : '驱动恢复未完全成功',
+        description: `${result.message}。已重新检测驱动状态。`,
+        type: result.success ? 'success' : 'warning',
+      });
+      if (result.needs_reboot) {
+        showToast({ title: '恢复可能需要重启', description: '部分驱动安装需要重启 Windows 后完成。', type: 'info' });
+      }
+      await loadDrivers();
+    } catch (error) {
+      showToast({ title: '驱动恢复失败', description: String(error), type: 'error' });
+    } finally {
+      setRestoring(false);
+    }
+  }, [loadDrivers, showToast]);
+
   const isExpanded = expandedModule === 'driver-cleanup';
-  if (shouldSkipInactivePageRender(layoutMode, isPageActive) && !deleting) return null;
+  if (shouldSkipInactivePageRender(layoutMode, isPageActive) && !deleting && !restoring) return null;
 
   return (
     <>
       <ModuleCard
         id="driver-cleanup"
         title="旧驱动清理"
-        description="检测没有设备绑定且已被新版本替代的第三方驱动包"
+        description="检测第三方驱动包，正在使用的驱动不可删除"
         icon={<Cpu className="w-6 h-6 text-[var(--brand-green)]" />}
         status={moduleState.status}
         fileCount={moduleState.fileCount}
         totalSize={moduleState.totalSize}
         countLabel="个驱动包"
-        doneBadgeText="建议清理"
-        emptyDoneBadgeText="未发现候选"
+        hideTotalSize
+        doneBadgeText="可选处理"
+        emptyDoneBadgeText="未发现可处理项"
         expanded={isExpanded}
         onToggleExpand={() => setExpandedModule(isExpanded ? null : 'driver-cleanup')}
         onScan={() => void loadDrivers()}
+        scanDisabled={deleting || restoring}
         scanButtonText={loading ? '检测中...' : scanResult ? '重新检测' : '检测驱动'}
         error={moduleState.error}
         variant={layoutMode === 'pages' ? 'page' : 'card'}
@@ -146,6 +175,33 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
         ) : null}
       >
         <div className="p-4 space-y-3">
+          {scanResult && (
+            <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-sm">
+              <div className="flex min-w-0 items-start gap-2 text-[11px] text-[var(--fg-muted)]">
+                <Archive className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--brand-green)]" />
+                <div>
+                  <p className="font-medium text-[var(--fg-secondary)]">删除前自动备份，软件不保留删除历史</p>
+                  <p className="mt-0.5">除正在使用的驱动外均可选择，但未确认过时的条目请谨慎处理。</p>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button onClick={() => {
+                  void openDriverBackupDir().catch((error) => {
+                    showToast({ title: '打开备份目录失败', description: String(error), type: 'error' });
+                  });
+                }} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[var(--brand-green)] hover:bg-emerald-500/10">
+                  <FolderOpen className="h-3.5 w-3.5" />打开备份目录
+                </button>
+                <button disabled={!scanResult.is_admin || deleting || restoring} onClick={() => setShowRestoreConfirm(true)} className="inline-flex items-center gap-1 rounded-lg border border-sky-500/30 px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50">
+                  <RotateCcw className="h-3.5 w-3.5" />恢复全部备份
+                </button>
+                <button disabled={selectedNames.size === 0 || !scanResult.is_admin || deleting || restoring} onClick={() => setShowConfirm(true)} className="inline-flex items-center gap-1 rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                  <Trash2 className="h-3.5 w-3.5" />删除选中 ({selectedNames.size})
+                </button>
+              </div>
+            </div>
+          )}
+
           {!scanResult && !loading && (
             <EmptyState icon={Cpu} title="尚未检测驱动包" description="LightC 只会通过 Windows pnputil 检查第三方驱动包，不直接删除驱动文件。" />
           )}
@@ -173,24 +229,24 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
                   {scanResult.packages.map((packageInfo) => {
                     const selected = selectedNames.has(packageInfo.published_name);
                     return (
-                      <label key={packageInfo.published_name} className={`block rounded-xl border p-3 transition ${packageInfo.actionable ? 'border-[var(--border-default)] hover:border-emerald-500/40' : 'border-[var(--border-muted)] opacity-70'}`}>
+                      <label key={packageInfo.published_name} className={`block rounded-xl border p-3 transition ${getPackageCardClass(packageInfo)} ${packageInfo.actionable ? '' : 'opacity-80'}`}>
                         <div className="flex items-start gap-3">
                           <input
                             type="checkbox"
                             checked={selected}
-                            disabled={!packageInfo.actionable || !scanResult.is_admin || deleting}
+                            disabled={!packageInfo.actionable || !scanResult.is_admin || deleting || restoring}
                             onChange={() => toggleSelection(packageInfo.published_name)}
                             className="mt-1 h-4 w-4 accent-emerald-500"
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-semibold text-sm text-[var(--fg-primary)]">{packageInfo.provider_name || '未知厂商'}</span>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${packageInfo.actionable ? 'bg-emerald-500/10 text-emerald-600' : 'bg-[var(--bg-hover)] text-[var(--fg-muted)]'}`}>{getStatusLabel(packageInfo)}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${getStatusClass(packageInfo)}`}>{getStatusLabel(packageInfo)}</span>
                               <span className="text-[11px] text-[var(--fg-muted)]">{packageInfo.published_name}</span>
                             </div>
                             <p className="mt-1 text-xs text-[var(--fg-secondary)]">{packageInfo.original_name} · {packageInfo.driver_version || '版本未知'} · {packageInfo.class_name || '类别未知'}</p>
                             <p className="mt-1 text-[11px] text-[var(--fg-muted)]">{packageInfo.reason}</p>
-                            <p className="mt-1 text-[11px] text-[var(--fg-muted)]">关联设备 {packageInfo.device_count} 个 · 驱动文件 {packageInfo.file_count} 个</p>
+                            <p className="mt-1 text-[11px] text-[var(--fg-muted)]">关联设备 {packageInfo.device_count} 个 · 活动设备 {packageInfo.active_device_count} 个 · 驱动文件 {packageInfo.file_count} 个</p>
                           </div>
                         </div>
                       </label>
@@ -199,17 +255,6 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[var(--bg-elevated)] px-3 py-2 text-[11px] text-[var(--fg-muted)]">
-                <span><Archive className="mr-1 inline h-3.5 w-3.5" />删除前会先导出驱动包备份，不使用强制删除。</span>
-                <div className="flex gap-2">
-                  <button onClick={() => {
-                    void openDriverBackupDir().catch((error) => {
-                      showToast({ title: '打开备份目录失败', description: String(error), type: 'error' });
-                    });
-                  }} className="inline-flex items-center gap-1 text-[var(--brand-green)] hover:underline"><FolderOpen className="h-3.5 w-3.5" />打开备份目录</button>
-                  <button disabled={selectedNames.size === 0 || !scanResult.is_admin || deleting} onClick={() => setShowConfirm(true)} className="inline-flex items-center gap-1 rounded-lg bg-rose-500 px-3 py-1.5 font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />删除选中 ({selectedNames.size})</button>
-                </div>
-              </div>
             </>
           )}
         </div>
@@ -221,10 +266,21 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
         onConfirm={() => void handleDelete()}
         title="确认删除旧驱动包"
         description={`将备份并删除选中的 ${selectedNames.size} 个驱动包。删除前后后端都会重新校验设备绑定状态。`}
-        warning="仅删除未关联设备且已有更新版本的候选项；不会使用 /force，不会直接删除 .sys 文件。备份失败时会自动阻止删除。"
+        warning="正在使用的驱动不可选；其他未关联设备的驱动包均可删除，但‘未确认过时’或‘信息不完整’的条目并不代表一定无用。删除前会完整备份，备份失败会阻止删除；不会使用 /force，也不会直接删除 .sys 文件。"
         confirmText="备份并删除"
         cancelText="取消"
         isDanger
+      />
+
+      <ConfirmDialog
+        isOpen={showRestoreConfirm}
+        onCancel={() => setShowRestoreConfirm(false)}
+        onConfirm={() => void handleRestore()}
+        title="确认恢复全部驱动备份"
+        description="将读取当前数据目录 driver_backups 下的全部 INF 备份，并交由 Windows pnputil 递归安装。"
+        warning="该操作需要管理员权限，可能重新安装多个历史驱动版本；执行后建议重新检测，必要时重启 Windows。"
+        confirmText="确认恢复"
+        cancelText="取消"
       />
     </>
   );

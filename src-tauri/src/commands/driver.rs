@@ -2,7 +2,7 @@
 // 旧驱动清理命令
 // ============================================================================
 
-use crate::driver_cleanup::{DriverDeleteResult, DriverScanResult};
+use crate::driver_cleanup::{DriverDeleteResult, DriverRestoreResult, DriverScanResult};
 
 /// 枚举并分析 Driver Store 中的第三方驱动包。
 #[tauri::command]
@@ -20,6 +20,14 @@ pub async fn delete_old_drivers(
     tokio::task::spawn_blocking(move || crate::driver_cleanup::delete(published_names))
         .await
         .map_err(|error| format!("驱动清理任务失败: {}", error))?
+}
+
+/// 从当前数据目录的 driver_backups 中递归恢复全部驱动包。
+#[tauri::command]
+pub async fn restore_all_driver_backups() -> Result<DriverRestoreResult, String> {
+    tokio::task::spawn_blocking(crate::driver_cleanup::restore_all_backups)
+        .await
+        .map_err(|error| format!("驱动恢复任务失败: {}", error))?
 }
 
 /// 打开驱动备份目录，便于用户自行查看已导出的 INF 包。

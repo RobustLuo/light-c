@@ -209,8 +209,10 @@ function GeneralSettings({ mode, setMode }: { mode: ThemeMode; setMode: (mode: T
       setIsClearing(true);
       const items = await listClearableDataItems();
       setClearableItems(items);
-      // 默认只勾选实际存在且有内容的数据项，避免用户打开弹窗后看到一堆空操作。
-      setSelectedClearItemIds(items.filter(item => item.exists && item.file_count > 0).map(item => item.id));
+      // 驱动备份文件通常较大且承担误删后的手动恢复作用，必须由用户单独确认清理。
+      setSelectedClearItemIds(items
+        .filter(item => item.id !== 'driver_backups' && item.exists && item.file_count > 0)
+        .map(item => item.id));
       setClearDialogOpen(true);
     } catch (error) {
       showToast({
@@ -1036,6 +1038,15 @@ function GuideSettings() {
             </p>
             <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6">
               管理休眠文件、Windows 组件存储、组件基线压缩和虚拟内存迁移引导等系统级功能。<span className="text-[var(--color-warning)] font-medium">此功能需要管理员权限</span>，ResetBase 深度清理会影响系统更新回滚，操作前请确认风险。
+            </p>
+          </div>
+          <div>
+            <p className="text-sm font-medium text-[var(--text-primary)] mb-2 flex items-center gap-2">
+              <Cpu className="w-4 h-4 text-[var(--brand-green)]" />
+              旧驱动清理
+            </p>
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6">
+              正在使用的驱动不可选，其他未关联设备的驱动需确认后处理。删除前会备份到当前数据目录，模块顶部支持一键恢复。
             </p>
           </div>
           <div>

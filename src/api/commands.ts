@@ -240,6 +240,7 @@ export interface DriverPackageInfo {
   family_id: string;
   signer_name: string;
   device_count: number;
+  active_device_count: number;
   file_count: number;
   status: 'recommended' | 'in_use' | 'no_newer_version' | 'unknown';
   actionable: boolean;
@@ -249,7 +250,7 @@ export interface DriverPackageInfo {
 export interface DriverScanResult {
   is_admin: boolean;
   packages: DriverPackageInfo[];
-  recommended_count: number;
+  candidate_count: number;
 }
 
 export interface DriverDeleteDetail {
@@ -267,6 +268,13 @@ export interface DriverDeleteResult {
   details: DriverDeleteDetail[];
 }
 
+export interface DriverRestoreResult {
+  backup_directory: string;
+  success: boolean;
+  needs_reboot: boolean;
+  message: string;
+}
+
 /** 检测第三方驱动包，后端只返回经过安全分类的结果。 */
 export async function scanOldDrivers(): Promise<DriverScanResult> {
   return invoke<DriverScanResult>('scan_old_drivers');
@@ -277,7 +285,12 @@ export async function deleteOldDrivers(publishedNames: string[]): Promise<Driver
   return invoke<DriverDeleteResult>('delete_old_drivers', { publishedNames });
 }
 
-/** 打开 LightC 数据目录下的驱动备份目录。 */
+/** 递归恢复当前数据目录中所有已保存的驱动包备份。 */
+export async function restoreAllDriverBackups(): Promise<DriverRestoreResult> {
+  return invoke<DriverRestoreResult>('restore_all_driver_backups');
+}
+
+/** 打开当前数据目录下的独立驱动备份目录。 */
 export async function openDriverBackupDir(): Promise<void> {
   return invoke<void>('open_driver_backup_dir');
 }

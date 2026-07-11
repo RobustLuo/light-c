@@ -35,6 +35,8 @@ export interface ModuleCardProps {
   emptyDoneBadgeText?: string;
   /** fileCount 的单位标签，默认"个文件"。大目录模块可传"个大目录" */
   countLabel?: string;
+  /** 仅展示数量，不展示不适用的空间统计。 */
+  hideTotalSize?: boolean;
   /** 是否展开 */
   expanded: boolean;
   /** 展开/收起回调 */
@@ -77,6 +79,7 @@ export function ModuleCard({
   doneBadgeText = '可清理',
   emptyDoneBadgeText = '已清理',
   countLabel = '个文件',
+  hideTotalSize = false,
   expanded,
   onToggleExpand,
   onScan,
@@ -191,7 +194,7 @@ export function ModuleCard({
           {/* 统计信息 - 使用 tabular-nums 确保数字稳定不抖动 */}
           {isDone && fileCount > 0 && (
             <div className="text-right shrink-0 mr-3">
-              <p className="text-xl font-bold text-[var(--brand-green)] tabular-nums">{formatSize(totalSize)}</p>
+              {!hideTotalSize && <p className="text-xl font-bold text-[var(--brand-green)] tabular-nums">{formatSize(totalSize)}</p>}
               <p className="text-[13px] text-[var(--text-muted)] tabular-nums">{fileCount.toLocaleString()} {countLabel}</p>
             </div>
           )}
