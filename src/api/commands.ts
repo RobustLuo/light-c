@@ -239,6 +239,7 @@ export interface DriverPackageInfo {
   driver_version: string;
   family_id: string;
   signer_name: string;
+  driver_store_path: string;
   device_count: number;
   active_device_count: number;
   file_count: number;

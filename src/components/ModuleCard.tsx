@@ -59,6 +59,8 @@ export interface ModuleCardProps {
   variant?: 'card' | 'page';
   /** 页面模式下强制展示内容，避免切换模块后还要再次展开。 */
   forceExpanded?: boolean;
+  /** 允许模块内容中的 sticky 元素跨越卡片内容滚动时保持可见。 */
+  allowStickyContent?: boolean;
 }
 
 // ============================================================================
@@ -91,6 +93,7 @@ export function ModuleCard({
   error,
   variant = 'card',
   forceExpanded = false,
+  allowStickyContent = false,
 }: ModuleCardProps) {
   const isScanning = status === 'scanning';
   const isDone = status === 'done';
@@ -146,7 +149,7 @@ export function ModuleCard({
     <div 
       className={`
         /* 微信风格卡片：纯白背景 + 极淡阴影 + 大圆角 */
-        bg-[var(--bg-card)] rounded-2xl overflow-hidden
+        bg-[var(--bg-card)] rounded-2xl ${allowStickyContent ? 'overflow-visible' : 'overflow-hidden'}
         transition-all duration-300 ease-out
         ${isPageVariant
           ? 'shadow-sm ring-1 ring-[var(--border-color)]'
@@ -255,7 +258,7 @@ export function ModuleCard({
       </div>
 
       {/* 展开内容 - 手风琴动画 */}
-      <AccordionContent expanded={contentExpanded} animated={!isPageVariant}>
+      <AccordionContent expanded={contentExpanded} animated={!isPageVariant && !allowStickyContent}>
         <div className="border-t border-[var(--border-color)] pb-2">
           {children}
         </div>
@@ -326,8 +329,8 @@ function AccordionContent({ expanded, children, animated = true }: AccordionCont
   if (!shouldRender) return null;
 
   if (!animated) {
-    // 页面模式下模块内容始终可见，不需要手风琴高度计算，避免隐藏页面切换时产生无意义动画。
-    return <div ref={contentRef}>{children}</div>;
+    // 页面模式或悬浮操作模块不做高度动画，避免 overflow 规则截断 sticky 子元素。
+    return expanded ? <div ref={contentRef}>{children}</div> : null;
   }
 
   return (

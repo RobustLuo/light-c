@@ -31,6 +31,7 @@ pub struct DriverPackageInfo {
     pub driver_version: String,
     pub family_id: String,
     pub signer_name: String,
+    pub driver_store_path: String,
     pub device_count: usize,
     pub active_device_count: usize,
     pub file_count: usize,
@@ -80,6 +81,7 @@ struct RawDriverPackage {
     driver_version: String,
     family_id: String,
     signer_name: String,
+    driver_package_id: String,
     device_count: usize,
     active_device_count: usize,
     file_count: usize,
@@ -169,18 +171,20 @@ pub fn delete(published_names: Vec<String>) -> Result<DriverDeleteResult, String
     let selected_names = normalize_published_names(&published_names)?;
     let current_scan = scan()?;
     let selected_packages = validate_selected_packages(&current_scan, &selected_names)?;
-    let backup_directory = create_backup_directory()?;
+    let backup_directory = create_backup_root()?;
 
-    // 所有备份成功后才进入删除阶段，避免只备份一部分却已经修改系统状态。
+    // 每个 OEM 包使用稳定目录；删除失败后重试会复用已有备份，不会不断产生时间戳目录。
     for package in &selected_packages {
-        export_driver_package(&package.published_name, &backup_directory)?;
+        backup_driver_package(package, &backup_directory)?;
     }
 
     let mut details = Vec::with_capacity(selected_packages.len());
     let mut needs_reboot = false;
     for package in selected_packages {
         let published_name = package.published_name;
-        let command_result = run_pnputil(&["/delete-driver", published_name.as_str()]);
+        // /uninstall 只解除该包与已断开设备的关联；正在运行的设备在扫描和后端复核中仍会被拦截。
+        let command_result =
+            run_pnputil(&["/delete-driver", published_name.as_str(), "/uninstall"]);
         let (command_success, output_text) = match command_result {
             Ok(output) => (output.status_success, format_command_output(&output.output)),
             Err(error) => (false, error),
@@ -353,6 +357,7 @@ fn classify_packages(raw_packages: Vec<RawDriverPackage>) -> Vec<DriverPackageIn
                 driver_version: package.driver_version,
                 family_id: package.family_id,
                 signer_name: package.signer_name,
+                driver_store_path: build_driver_store_path(&package.driver_package_id),
                 device_count: package.device_count,
                 active_device_count: package.active_device_count,
                 file_count: package.file_count,
@@ -412,18 +417,36 @@ fn normalize_published_names(names: &[String]) -> Result<Vec<String>, String> {
     Ok(normalized)
 }
 
-fn export_driver_package(published_name: &str, backup_directory: &Path) -> Result<(), String> {
+fn backup_driver_package(package: &DriverPackageInfo, backup_root: &Path) -> Result<(), String> {
+    let backup_directory = backup_root.join(&package.published_name);
+    if has_backup_inf(&backup_directory, &package.original_name) {
+        info!(
+            "复用已有驱动备份: {} -> {}",
+            package.published_name,
+            backup_directory.display()
+        );
+        return Ok(());
+    }
+
+    fs::create_dir_all(&backup_directory).map_err(|error| {
+        format!(
+            "创建驱动 {} 的备份目录失败 {}: {}",
+            package.published_name,
+            backup_directory.display(),
+            error
+        )
+    })?;
     let output = run_pnputil(&[
         "/export-driver",
-        published_name,
+        package.published_name.as_str(),
         &backup_directory.to_string_lossy(),
     ])?;
-    if output.status_success {
+    if output.status_success && has_backup_inf(&backup_directory, &package.original_name) {
         Ok(())
     } else {
         Err(format!(
-            "备份驱动包 {} 失败: {}",
-            published_name,
+            "备份驱动包 {} 失败或备份文件不完整: {}",
+            package.published_name,
             format_command_output(&output.output)
         ))
     }
@@ -451,23 +474,33 @@ fn collect_backup_inf_files(backup_directory: &Path) -> Result<Vec<PathBuf>, Str
     Ok(inf_files)
 }
 
-fn create_backup_directory() -> Result<PathBuf, String> {
-    let directory = crate::data_dir::get_data_dir()
-        .join(DRIVER_BACKUP_DIR)
-        .join(format!(
-            "{}-{}-{}",
-            Local::now().format("%Y%m%d_%H%M%S_%f"),
-            std::process::id(),
-            unique_backup_suffix()
-        ));
+fn create_backup_root() -> Result<PathBuf, String> {
+    let directory = crate::data_dir::get_data_dir().join(DRIVER_BACKUP_DIR);
     fs::create_dir_all(&directory)
         .map_err(|error| format!("创建驱动备份目录失败 {}: {}", directory.display(), error))?;
     Ok(directory)
 }
 
-fn unique_backup_suffix() -> u32 {
-    // 纳秒并非所有文件系统都保留，但可显著降低同一进程连续操作的目录碰撞概率。
-    Local::now().timestamp_subsec_nanos()
+fn has_backup_inf(directory: &Path, expected_name: &str) -> bool {
+    let expected_name = expected_name.trim();
+    directory.is_dir()
+        && WalkDir::new(directory)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(Result::ok)
+            .any(|entry| {
+                entry.file_type().is_file()
+                    && entry
+                        .path()
+                        .extension()
+                        .and_then(|extension| extension.to_str())
+                        .is_some_and(|extension| extension.eq_ignore_ascii_case("inf"))
+                    && entry
+                        .path()
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.eq_ignore_ascii_case(expected_name))
+            })
 }
 
 fn temporary_xml_path() -> PathBuf {
@@ -575,6 +608,7 @@ fn is_driver_text_element(name: &[u8]) -> bool {
             | b"DriverVersion"
             | b"FamilyId"
             | b"SignerName"
+            | b"DriverPackageId"
             | b"Status"
     )
 }
@@ -595,9 +629,36 @@ fn assign_driver_text(package: &mut RawDriverPackage, element: &str, text: &str)
         "DriverVersion" => &mut package.driver_version,
         "FamilyId" => &mut package.family_id,
         "SignerName" => &mut package.signer_name,
+        "DriverPackageId" => &mut package.driver_package_id,
         _ => return,
     };
     *target = text.trim().to_string();
+}
+
+fn build_driver_store_path(driver_package_id: &str) -> String {
+    if driver_package_id.trim().is_empty() {
+        return String::new();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let system_root = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+        return system_root
+            .join("System32")
+            .join("DriverStore")
+            .join("FileRepository")
+            .join(driver_package_id.trim())
+            .to_string_lossy()
+            .to_string();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = driver_package_id;
+        String::new()
+    }
 }
 
 fn read_attribute(

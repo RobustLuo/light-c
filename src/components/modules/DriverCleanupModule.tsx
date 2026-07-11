@@ -4,14 +4,16 @@
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Archive, CheckCircle2, Cpu, FolderOpen, Loader2, RotateCcw, ShieldAlert, Trash2 } from 'lucide-react';
+import { Archive, CheckCircle2, Cpu, FolderOpen, Loader2, RotateCcw, Search, ShieldAlert, Trash2 } from 'lucide-react';
 import { ModuleCard } from '../ModuleCard';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { EmptyState } from '../EmptyState';
+import { Checkbox } from '../ui/Checkbox';
 import { useToast } from '../Toast';
 import { useModuleDashboard } from '../../contexts/DashboardContext';
 import {
   deleteOldDrivers,
+  openInFolder,
   openDriverBackupDir,
   restoreAllDriverBackups,
   scanOldDrivers,
@@ -19,6 +21,7 @@ import {
   type DriverScanResult,
 } from '../../api/commands';
 import { shouldSkipInactivePageRender, type ModuleRenderProps } from './moduleProps';
+import { openSearchUrl } from '../../utils/searchEngine';
 
 function getStatusLabel(packageInfo: DriverPackageInfo): string {
   switch (packageInfo.status) {
@@ -49,6 +52,44 @@ function getPackageCardClass(packageInfo: DriverPackageInfo): string {
     case 'unknown': return 'border-sky-500/20 bg-sky-500/[0.03]';
     default: return 'border-[var(--border-default)] hover:border-emerald-500/40';
   }
+}
+
+function getDriverClassLabel(className: string): string {
+  const normalizedClassName = className.trim().toLowerCase();
+  const labels: Record<string, string> = {
+    bluetooth: '蓝牙设备',
+    camera: '摄像头',
+    cdrom: '光驱',
+    computer: '计算机',
+    display: '显示器',
+    extension: '驱动扩展',
+    'hiddclass': '人机接口设备',
+    hidclass: '人机接口设备（键鼠等外设）',
+    keyboard: '键盘',
+    media: '媒体设备',
+    modem: '调制解调器',
+    mouse: '鼠标',
+    net: '网络适配器',
+    ports: '串口/并口',
+    printer: '打印机',
+    processor: '处理器',
+    system: '系统设备',
+    'system devices': '系统设备',
+    'softwarecomponent': '软件组件',
+    'software component': '软件组件',
+    usb: 'USB 设备',
+  };
+  return labels[normalizedClassName] ?? className;
+}
+
+function getDriverSearchQuery(packageInfo: DriverPackageInfo): string {
+  const driverName = packageInfo.original_name
+    .replace(/\.inf$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  // pnputil 版本字段通常带日期；只保留版本号，避免日期干扰搜索结果。
+  const version = packageInfo.driver_version.match(/\d+(?:\.\d+){1,}/)?.[0] ?? '';
+  return [packageInfo.provider_name, driverName, version, 'driver'].filter(Boolean).join(' ');
 }
 
 export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true }: ModuleRenderProps) {
@@ -99,15 +140,32 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
     });
   }, []);
 
+  const handleSearchDriver = useCallback(async (packageInfo: DriverPackageInfo) => {
+    try {
+      // 只使用精简后的厂商、驱动名和版本，避免日期字段干扰搜索结果。
+      await openSearchUrl(getDriverSearchQuery(packageInfo));
+    } catch (error) {
+      showToast({ title: '打开搜索失败', description: String(error), type: 'error' });
+    }
+  }, [showToast]);
+
   const handleDelete = useCallback(async () => {
     setShowConfirm(false);
     setDeleting(true);
     try {
       const names = Array.from(selectedNames);
       const result = await deleteOldDrivers(names);
+      const failureMessages = result.details
+        .filter((detail) => !detail.success && detail.error_message)
+        .map((detail) => `${detail.published_name}: ${detail.error_message}`)
+        .join('；');
       showToast({
         title: result.failed_count === 0 ? '驱动清理完成' : '驱动清理部分完成',
-        description: `成功 ${result.success_count} 个，失败 ${result.failed_count} 个。备份位置：${result.backup_directory}。可重新检测确认结果。`,
+        description: [
+          `成功 ${result.success_count} 个，失败 ${result.failed_count} 个。`,
+          failureMessages ? `失败原因：${failureMessages}` : '',
+          `备份位置：${result.backup_directory}。可重新检测确认结果。`,
+        ].filter(Boolean).join(' '),
         type: result.failed_count === 0 ? 'success' : 'warning',
       });
       if (result.needs_reboot) {
@@ -168,6 +226,7 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
         error={moduleState.error}
         variant={layoutMode === 'pages' ? 'page' : 'card'}
         forceExpanded={layoutMode === 'pages'}
+        allowStickyContent
         headerExtra={scanResult ? (
           <span className={`text-xs px-2 py-1 rounded-full ${scanResult.is_admin ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'}`}>
             {scanResult.is_admin ? '管理员' : '可检测，删除需管理员'}
@@ -176,7 +235,7 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
       >
         <div className="p-4 space-y-3">
           {scanResult && (
-            <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-sm">
+            <div className="sticky top-2 z-20 flex flex-wrap items-start gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-sm">
               <div className="flex min-w-0 items-start gap-2 text-[11px] text-[var(--fg-muted)]">
                 <Archive className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--brand-green)]" />
                 <div>
@@ -184,7 +243,7 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
                   <p className="mt-0.5">除正在使用的驱动外均可选择，但未确认过时的条目请谨慎处理。</p>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="ml-auto flex shrink-0 items-center gap-2 rounded-lg bg-[var(--bg-elevated)]/95 py-0.5 pl-1 backdrop-blur-sm">
                 <button onClick={() => {
                   void openDriverBackupDir().catch((error) => {
                     showToast({ title: '打开备份目录失败', description: String(error), type: 'error' });
@@ -196,7 +255,8 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
                   <RotateCcw className="h-3.5 w-3.5" />恢复全部备份
                 </button>
                 <button disabled={selectedNames.size === 0 || !scanResult.is_admin || deleting || restoring} onClick={() => setShowConfirm(true)} className="inline-flex items-center gap-1 rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
-                  <Trash2 className="h-3.5 w-3.5" />删除选中 ({selectedNames.size})
+                  {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  {deleting ? '删除中...' : `删除选中 (${selectedNames.size})`}
                 </button>
               </div>
             </div>
@@ -230,23 +290,56 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
                     const selected = selectedNames.has(packageInfo.published_name);
                     return (
                       <label key={packageInfo.published_name} className={`block rounded-xl border p-3 transition ${getPackageCardClass(packageInfo)} ${packageInfo.actionable ? '' : 'opacity-80'}`}>
-                        <div className="flex items-start gap-3">
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            disabled={!packageInfo.actionable || !scanResult.is_admin || deleting || restoring}
-                            onChange={() => toggleSelection(packageInfo.published_name)}
-                            className="mt-1 h-4 w-4 accent-emerald-500"
-                          />
+                        <div className="flex items-start gap-2">
+                          <div className="mt-1 shrink-0">
+                            <Checkbox
+                              checked={selected}
+                              disabled={!packageInfo.actionable || !scanResult.is_admin || deleting || restoring}
+                              onChange={() => toggleSelection(packageInfo.published_name)}
+                            />
+                          </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-semibold text-sm text-[var(--fg-primary)]">{packageInfo.provider_name || '未知厂商'}</span>
                               <span className={`rounded-full px-2 py-0.5 text-[10px] ${getStatusClass(packageInfo)}`}>{getStatusLabel(packageInfo)}</span>
                               <span className="text-[11px] text-[var(--fg-muted)]">{packageInfo.published_name}</span>
                             </div>
-                            <p className="mt-1 text-xs text-[var(--fg-secondary)]">{packageInfo.original_name} · {packageInfo.driver_version || '版本未知'} · {packageInfo.class_name || '类别未知'}</p>
+                            <p className="mt-1 text-xs text-[var(--fg-secondary)]">{packageInfo.original_name} · {packageInfo.driver_version || '版本未知'} · {getDriverClassLabel(packageInfo.class_name || '类别未知')}</p>
                             <p className="mt-1 text-[11px] text-[var(--fg-muted)]">{packageInfo.reason}</p>
                             <p className="mt-1 text-[11px] text-[var(--fg-muted)]">关联设备 {packageInfo.device_count} 个 · 活动设备 {packageInfo.active_device_count} 个 · 驱动文件 {packageInfo.file_count} 个</p>
+                          </div>
+                          <div className="flex shrink-0 self-center items-center gap-1">
+                            <button
+                              type="button"
+                              title="搜索该驱动信息"
+                              aria-label={`搜索 ${packageInfo.provider_name} ${packageInfo.original_name}`}
+                              disabled={deleting || restoring}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                void handleSearchDriver(packageInfo);
+                              }}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--brand-green-10)] hover:text-[var(--brand-green)] disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <Search className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              title={packageInfo.driver_store_path ? '打开驱动所在目录' : '驱动目录信息不可用'}
+                              aria-label={`打开 ${packageInfo.provider_name} 驱动所在目录`}
+                              disabled={!packageInfo.driver_store_path || deleting || restoring}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                if (!packageInfo.driver_store_path) return;
+                                void openInFolder(packageInfo.driver_store_path).catch((error) => {
+                                  showToast({ title: '打开驱动目录失败', description: String(error), type: 'error' });
+                                });
+                              }}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--brand-green-10)] hover:text-[var(--brand-green)] disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <FolderOpen className="h-3.5 w-3.5" />
+                            </button>
                           </div>
                         </div>
                       </label>
