@@ -16,6 +16,7 @@ dependencies = [
  "minisign-verify",
  "num_cpus",
  "once_cell",
+ "quick-xml",
  "rayon",
  "regex",
  "reqwest",

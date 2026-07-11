@@ -9,6 +9,7 @@ mod cleaner;
 mod commands;
 mod data_dir;
 mod disk_growth;
+mod driver_cleanup;
 mod health_score;
 mod logger;
 mod scanner;
@@ -79,6 +80,10 @@ pub fn run() {
             cleanup_winsxs,
             cleanup_winsxs_resetbase,
             open_virtual_memory_settings,
+            // 旧驱动清理
+            scan_old_drivers,
+            delete_old_drivers,
+            open_driver_backup_dir,
             // 健康评分
             get_health_score,
             // 卸载残留和注册表清理

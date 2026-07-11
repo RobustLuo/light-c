@@ -228,6 +228,61 @@ export async function openVirtualMemorySettings(): Promise<void> {
 }
 
 // ============================================================================
+// 旧驱动清理 API
+// ============================================================================
+
+export interface DriverPackageInfo {
+  published_name: string;
+  original_name: string;
+  provider_name: string;
+  class_name: string;
+  driver_version: string;
+  family_id: string;
+  signer_name: string;
+  device_count: number;
+  file_count: number;
+  status: 'recommended' | 'in_use' | 'no_newer_version' | 'unknown';
+  actionable: boolean;
+  reason: string;
+}
+
+export interface DriverScanResult {
+  is_admin: boolean;
+  packages: DriverPackageInfo[];
+  recommended_count: number;
+}
+
+export interface DriverDeleteDetail {
+  published_name: string;
+  success: boolean;
+  verified_removed: boolean;
+  error_message: string | null;
+}
+
+export interface DriverDeleteResult {
+  backup_directory: string;
+  success_count: number;
+  failed_count: number;
+  needs_reboot: boolean;
+  details: DriverDeleteDetail[];
+}
+
+/** 检测第三方驱动包，后端只返回经过安全分类的结果。 */
+export async function scanOldDrivers(): Promise<DriverScanResult> {
+  return invoke<DriverScanResult>('scan_old_drivers');
+}
+
+/** 由后端重新校验、备份并删除选中的驱动包。 */
+export async function deleteOldDrivers(publishedNames: string[]): Promise<DriverDeleteResult> {
+  return invoke<DriverDeleteResult>('delete_old_drivers', { publishedNames });
+}
+
+/** 打开 LightC 数据目录下的驱动备份目录。 */
+export async function openDriverBackupDir(): Promise<void> {
+  return invoke<void>('open_driver_backup_dir');
+}
+
+// ============================================================================
 // 鍋ュ悍璇勫垎鐩稿叧
 // ============================================================================
 

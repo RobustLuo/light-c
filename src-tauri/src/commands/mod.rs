@@ -12,6 +12,7 @@ mod data;
 mod delete;
 mod disk;
 mod disk_growth;
+pub(crate) mod driver;
 mod hotspot;
 mod leftovers;
 mod logger_cmd;
@@ -19,7 +20,7 @@ mod registry;
 mod scan;
 mod social;
 mod system;
-mod tools;
+pub(crate) mod tools;
 mod verify;
 
 // 公共类型（供前端和其他模块使用）
@@ -29,6 +30,7 @@ pub use data::*;
 pub use delete::*;
 pub use disk::*;
 pub use disk_growth::*;
+pub use driver::*;
 pub use hotspot::*;
 pub use leftovers::*;
 pub use logger_cmd::*;
