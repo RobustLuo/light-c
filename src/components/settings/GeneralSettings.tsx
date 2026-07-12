@@ -328,7 +328,7 @@ export function GeneralSettings({ mode, setMode }: { mode: ThemeMode; setMode: (
               </div>
               <div className="text-left">
                 <p className="text-sm font-medium text-[var(--text-primary)]">更改数据目录</p>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">选择独立空文件夹存储清理日志和缓存数据，已有 LightC 数据将自动迁移</p>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">选择独立空文件夹存储清理日志和缓存数据，已有数据将自动迁移</p>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-[var(--text-muted)] group-hover:text-[var(--text-secondary)] transition-colors" />

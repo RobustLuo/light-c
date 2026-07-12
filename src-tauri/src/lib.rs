@@ -8,6 +8,7 @@ mod ai_models;
 mod cleaner;
 mod commands;
 mod data_dir;
+mod disk_health;
 mod disk_growth;
 mod driver_cleanup;
 mod health_score;
@@ -58,6 +59,7 @@ pub fn run() {
             // 磁盘信息
             get_disk_info,
             get_local_drives,
+            get_disk_health,
             // 扫描相关
             scan_junk_files,
             scan_category,

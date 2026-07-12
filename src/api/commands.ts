@@ -83,6 +83,35 @@ export async function getLocalDrives(): Promise<LocalDriveInfo[]> {
   return invoke<LocalDriveInfo[]>('get_local_drives');
 }
 
+export interface DiskVolumeInfo {
+  drive_letter: string;
+  volume_name: string;
+  file_system: string;
+  total_space: number;
+  used_space: number;
+  free_space: number;
+  usage_percent: number;
+}
+
+export interface DiskHealthInfo {
+  number: number | null;
+  model: string;
+  serial_number: string;
+  firmware_version: string;
+  media_type: string;
+  bus_type: string;
+  health_status: 'Healthy' | 'Warning' | 'Unhealthy' | 'Unknown';
+  operational_status: string;
+  size: number;
+  drive_letters: string[];
+  volumes: DiskVolumeInfo[];
+}
+
+/** 获取物理磁盘基础信息和 Windows Storage 报告的健康状态。 */
+export async function getDiskHealth(): Promise<DiskHealthInfo[]> {
+  return invoke<DiskHealthInfo[]>('get_disk_health');
+}
+
 /**
  * 鎵ц鍨冨溇鏂囦欢鎵弿
  * @param request 鎵弿璇锋眰鍙傛暟锛堝彲閫夛級
