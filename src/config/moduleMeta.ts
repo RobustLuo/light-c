@@ -31,7 +31,6 @@ export type AppModuleId =
   | 'context-menu'
   | 'hotspot'
   | 'disk-growth'
-  | 'disk-info'
   | 'ai-models';
 
 export interface AppModuleMeta {
@@ -43,7 +42,6 @@ export interface AppModuleMeta {
 
 export const APP_MODULE_META: AppModuleMeta[] = [
   { id: 'junk-clean', label: '垃圾清理', icon: Trash2 },
-  { id: 'disk-info', label: '磁盘信息', icon: HardDrive },
   { id: 'big-files', label: '大文件清理', icon: FileBox },
   { id: 'social-clean', label: '社交软件专清', icon: MessageCircle },
   { id: 'system-slim', label: '系统瘦身', icon: Layers },

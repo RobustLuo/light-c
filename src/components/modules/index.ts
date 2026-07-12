@@ -12,5 +12,4 @@ export { RegistryModule } from './RegistryModule';
 export { HotspotModule } from './HotspotModule';
 export { ContextMenuModule } from './ContextMenuModule';
 export { DiskGrowthModule } from './DiskGrowthModule';
-export { DiskInfoModule } from './DiskInfoModule';
 export { AiModelsModule } from './AiModelsModule';

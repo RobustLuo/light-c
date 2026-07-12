@@ -34,6 +34,15 @@ export function GuideSettings() {
           </div>
           <div>
             <p className="text-sm font-medium text-[var(--text-primary)] mb-2 flex items-center gap-2">
+              <HardDrive className="w-4 h-4 text-[var(--brand-green)]" />
+              磁盘信息
+            </p>
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6">
+              在「设置 - 磁盘信息」中查看物理磁盘型号、容量、分区空间和 Windows 报告的健康状态。该功能只读，不执行清理或修复；“未知”不代表健康或故障。
+            </p>
+          </div>
+          <div>
+            <p className="text-sm font-medium text-[var(--text-primary)] mb-2 flex items-center gap-2">
               <MessageCircle className="w-4 h-4 text-[var(--brand-green)]" />
               社交软件专清
             </p>
@@ -266,4 +275,3 @@ export function GuideSettings() {
     </div>
   );
 }
-

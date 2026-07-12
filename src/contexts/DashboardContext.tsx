@@ -59,8 +59,6 @@ export interface ModulesState {
   contextMenu: ModuleState;
   /** C 盘全盘变化分析模块 */
   diskGrowth: ModuleState;
-  /** 物理磁盘信息模块，和顶部 C 盘空间摘要 diskInfo 分开命名。 */
-  diskHealth: ModuleState;
   /** AI资产分析模块 */
   aiModels: ModuleState;
 }
@@ -151,7 +149,6 @@ const initialModulesState: ModulesState = {
   hotspot: { ...initialModuleState },
   contextMenu: { ...initialModuleState },
   diskGrowth: { ...initialModuleState },
-  diskHealth: { ...initialModuleState },
   aiModels: { ...initialModuleState },
 };
 
@@ -175,7 +172,6 @@ const ModuleStateContexts: { [K in keyof ModulesState]: React.Context<ModuleStat
   hotspot: createContext<ModuleState | null>(null),
   contextMenu: createContext<ModuleState | null>(null),
   diskGrowth: createContext<ModuleState | null>(null),
-  diskHealth: createContext<ModuleState | null>(null),
   aiModels: createContext<ModuleState | null>(null),
 };
 
@@ -371,11 +367,9 @@ export function DashboardProvider({ children }: DashboardProviderProps) {
                         <ModuleStateContexts.hotspot.Provider value={modules.hotspot}>
                           <ModuleStateContexts.contextMenu.Provider value={modules.contextMenu}>
                             <ModuleStateContexts.diskGrowth.Provider value={modules.diskGrowth}>
-                              <ModuleStateContexts.diskHealth.Provider value={modules.diskHealth}>
-                                <ModuleStateContexts.aiModels.Provider value={modules.aiModels}>
-                                  {children}
-                                </ModuleStateContexts.aiModels.Provider>
-                              </ModuleStateContexts.diskHealth.Provider>
+                              <ModuleStateContexts.aiModels.Provider value={modules.aiModels}>
+                                {children}
+                              </ModuleStateContexts.aiModels.Provider>
                             </ModuleStateContexts.diskGrowth.Provider>
                           </ModuleStateContexts.contextMenu.Provider>
                         </ModuleStateContexts.hotspot.Provider>

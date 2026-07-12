@@ -13,6 +13,7 @@ import { FeatureSettings } from './settings/FeatureSettings';
 import { GeneralSettings } from './settings/GeneralSettings';
 import { GuideSettings } from './settings/GuideSettings';
 import { SecuritySettings } from './settings/SecuritySettings';
+import { DiskInfoSettings } from './settings/DiskInfoSettings';
 import { SETTINGS_TABS } from './settings/constants';
 import type { SettingsTab } from './settings/types';
 
@@ -93,6 +94,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <div className="min-h-0 flex-1 overflow-auto p-5">
               {activeTab === 'general' && <GeneralSettings mode={mode} setMode={setMode} />}
               {activeTab === 'features' && <FeatureSettings />}
+              {activeTab === 'disk-info' && <DiskInfoSettings />}
               {activeTab === 'guide' && <GuideSettings />}
               {activeTab === 'security' && <SecuritySettings />}
               {activeTab === 'feedback' && <FeedbackSettings />}

@@ -5,7 +5,6 @@ import {
   ContextMenuModule,
   DriverCleanupModule,
   DiskGrowthModule,
-  DiskInfoModule,
   HotspotModule,
   JunkCleanModule,
   LeftoversModule,
@@ -23,7 +22,6 @@ export interface AppModuleConfig {
 
 const moduleComponents: Record<AppModuleId, ComponentType<{ layoutMode?: LayoutMode; isPageActive?: boolean }>> = {
   'junk-clean': JunkCleanModule,
-  'disk-info': DiskInfoModule,
   'big-files': BigFilesModule,
   'social-clean': SocialCleanModule,
   'system-slim': SystemSlimModule,
