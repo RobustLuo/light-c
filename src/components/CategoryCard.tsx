@@ -220,6 +220,9 @@ interface VirtualFileItemProps {
 }
 
 const VirtualFileItem = memo(function VirtualFileItem({ file, selected, onToggle, style }: VirtualFileItemProps) {
+  // 回收站的真实删除路径是隐藏的 $R 文件，界面展示元数据中的原始文件名，避免与 Explorer 看到的内容脱节。
+  const displayPath = file.category === 'RecycleBin' ? file.name : file.path;
+
   return (
     <div
       style={style}
@@ -244,8 +247,8 @@ const VirtualFileItem = memo(function VirtualFileItem({ file, selected, onToggle
 
       {/* 文件路径 */}
       <div className="flex-1 min-w-0">
-        <p className="text-[13px] text-[var(--text-secondary)] truncate" title={file.path}>
-          {file.path}
+        <p className="text-[13px] text-[var(--text-secondary)] truncate" title={displayPath}>
+          {displayPath}
         </p>
       </div>
 
