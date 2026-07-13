@@ -149,7 +149,7 @@ function DiskInfoCard({ disk }: { disk: DiskHealthInfo }) {
         <InfoItem label="固件版本" value={disk.firmware_version || '未提供'} />
         <InfoItem label="序列号" value={formatSerial(disk.serial_number)} title={disk.serial_number || '未提供'} />
         <InfoItem label="磁盘编号" value={disk.number === null ? '未知' : `磁盘 ${disk.number}`} />
-        <InfoItem label="盘符数量" value={`${disk.drive_letters.length} 个`} />
+        <InfoItem label="分区数量" value={`${disk.drive_letters.length} 个`} />
       </div>
 
       {disk.volumes.length > 0 && (

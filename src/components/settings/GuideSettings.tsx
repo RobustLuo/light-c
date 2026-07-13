@@ -32,7 +32,7 @@ export function GuideSettings() {
               可选择 C/D/E 等目标分区，扫描该分区中体积最大的文件；返回数量可在「功能设置 - 大文件清理」中调整。请仔细查看文件路径和类型，避免删除系统文件或重要数据。
             </p>
           </div>
-          <div>
+          {/* <div>
             <p className="text-sm font-medium text-[var(--text-primary)] mb-2 flex items-center gap-2">
               <HardDrive className="w-4 h-4 text-[var(--brand-green)]" />
               磁盘信息
@@ -40,7 +40,7 @@ export function GuideSettings() {
             <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6">
               在「设置 - 磁盘信息」中查看物理磁盘型号、容量、分区空间和 Windows 报告的健康状态。该功能只读，不执行清理或修复；“未知”不代表健康或故障。
             </p>
-          </div>
+          </div> */}
           <div>
             <p className="text-sm font-medium text-[var(--text-primary)] mb-2 flex items-center gap-2">
               <MessageCircle className="w-4 h-4 text-[var(--brand-green)]" />
@@ -151,7 +151,7 @@ export function GuideSettings() {
               自动分析 Ollama、LM Studio、ComfyUI、HuggingFace 和深度发现来源中的模型资产，优先读取平台配置和标准目录，展示总占用、最大模型、平台占比和类型分布。
             </p>
             <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6 mt-2">
-              默认不会全盘扫描；绿色版 llama.cpp、Pinokio 或自建目录可开启<span className="text-[var(--brand-green)] font-medium">深度发现</span>，用 MFT 按模型文件特征补漏。该模块只做分析和定位，不提供删除模型操作。
+              默认不会全盘扫描；绿色版 llama.cpp、Pinokio 或自建目录可开启<span className="text-[var(--brand-green)] font-medium">深度发现</span>，用 MFT 按模型文件特征补漏。该模块主要提供分析和定位，删除模型操作请谨慎使用。
             </p>
           </div>
         </div>
