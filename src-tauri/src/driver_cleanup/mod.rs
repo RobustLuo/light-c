@@ -925,8 +925,12 @@ where
 {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+
         let output = Command::new(pnputil_path())
             .args(arguments)
+            // pnputil 是控制台程序；检测和删除都复用该入口，统一隐藏其窗口避免打断用户操作。
+            .creation_flags(0x08000000)
             .output()
             .map_err(|error| format!("启动 pnputil 失败: {}", error))?;
         return Ok(CommandResult {

@@ -106,6 +106,8 @@ pub fn query_disk_health() -> Result<Vec<DiskHealthInfo>, String> {
 
 #[cfg(target_os = "windows")]
 fn run_storage_query() -> Result<String, String> {
+    use std::os::windows::process::CommandExt;
+
     // 使用 CIM 一次性读取全部对象，减少 PowerShell 进程和 WMI 查询次数。
     let script = r#"
 $ErrorActionPreference = 'Stop'
@@ -177,6 +179,8 @@ $partitions = @(Get-CimInstance -Namespace 'root/Microsoft/Windows/Storage' -Cla
             "-Command",
             script,
         ])
+        // PowerShell 是控制台程序；显式禁止创建控制台窗口，避免检测时闪现蓝色窗口。
+        .creation_flags(0x08000000)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
