@@ -85,30 +85,50 @@ fn collect_drive_entries(sid_path: &Path, category: &JunkCategory, entries: &mut
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .filter(|name| !name.is_empty())
-            .unwrap_or(original_path);
+            .unwrap_or_else(|| original_path.clone());
 
-        entries.push(FileInfo::new(
-            data_path.to_string_lossy().into_owned(),
-            visible_name,
-            logical_size,
-            deleted_at,
-            data_path.is_dir(),
-            category.clone(),
-        ));
+        entries.push(
+            FileInfo::new(
+                data_path.to_string_lossy().into_owned(),
+                visible_name,
+                logical_size,
+                deleted_at,
+                data_path.is_dir(),
+                category.clone(),
+            )
+            .with_original_path(original_path),
+        );
     }
 }
 
 #[cfg(windows)]
 fn parse_metadata(metadata_path: &Path) -> Option<(u64, String, i64)> {
     let bytes = fs::read(metadata_path).ok()?;
-    if bytes.len() < 24 {
+    parse_metadata_bytes(&bytes)
+}
+
+#[cfg(windows)]
+fn parse_metadata_bytes(bytes: &[u8]) -> Option<(u64, String, i64)> {
+    if bytes.len() < 28 {
         return None;
     }
 
-    // Windows Vista 及以后版本的 $I 文件在偏移 8 存储原始大小，在偏移 24 存储原始路径。
+    // Windows Vista 及以后版本的 $I 文件：版本、原始大小、删除时间、路径长度、UTF-16 路径。
+    let version = u64::from_le_bytes(bytes[0..8].try_into().ok()?);
+    if version != 2 {
+        return None;
+    }
+
     let logical_size = u64::from_le_bytes(bytes[8..16].try_into().ok()?);
     let filetime = u64::from_le_bytes(bytes[16..24].try_into().ok()?);
-    let path_bytes = &bytes[24..];
+    let path_length = u32::from_le_bytes(bytes[24..28].try_into().ok()?) as usize;
+    let path_end = 28usize.checked_add(path_length.checked_mul(2)?)?;
+    if path_length == 0 || path_end > bytes.len() {
+        return None;
+    }
+
+    // 偏移 24 是路径长度字段，真正的 UTF-16 路径从偏移 28 开始，否则首字符会变成控制字符。
+    let path_bytes = &bytes[28..path_end];
     let utf16_path: Vec<u16> = path_bytes
         .chunks_exact(2)
         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
@@ -132,6 +152,27 @@ fn parse_metadata(metadata_path: &Path) -> Option<(u64, String, i64)> {
         .unwrap_or(0);
 
     Some((logical_size, original_path, deleted_at))
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::parse_metadata_bytes;
+
+    #[test]
+    fn parses_v2_metadata_path_without_length_prefix() {
+        let original_path = r"D:\C_Map\download\Viap发布封面.png";
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&2u64.to_le_bytes());
+        bytes.extend_from_slice(&1_648_597u64.to_le_bytes());
+        bytes.extend_from_slice(&132_000_000_000_000_000u64.to_le_bytes());
+        bytes.extend_from_slice(&(original_path.encode_utf16().count() as u32).to_le_bytes());
+        for character in original_path.encode_utf16() {
+            bytes.extend_from_slice(&character.to_le_bytes());
+        }
+
+        let (_, parsed_path, _) = parse_metadata_bytes(&bytes).expect("应解析有效的 $I 元数据");
+        assert_eq!(parsed_path, original_path);
+    }
 }
 
 #[cfg(windows)]
