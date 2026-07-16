@@ -50,7 +50,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'LightC v2.13.0'
+          releaseName: 'LightC v2.12.2'
           releaseBody: |
             ## 更新内容
             - 便携版配置、运行数据和 WebView2 界面数据跟随程序目录保存
