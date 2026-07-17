@@ -56,7 +56,8 @@ jobs:
             - 便携版配置、运行数据和 WebView2 界面数据跟随程序目录保存
             - 兼容旧版 AppData 数据、旧便携 marker 和旧配置文件
             - 数据管理设置页支持中间省略配置路径并一键定位配置文件
-            - 安装版、WebView2 离线版和便携版继续分别生成 exe 完整性签名资产
+            - 驱动检测 Windows 10 枚举兼容：支持中文系统字段、字段名与冒号之间的空格，以及无 BOM UTF-16 输出
+            - 应用图标补充 48x48 图标
 
             请查看 [CHANGELOG.md](https://github.com/Chunyu33/light-c/blob/main/CHANGELOG.md) 了解详细版本变更。
           releaseDraft: false
