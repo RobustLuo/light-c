@@ -5,6 +5,10 @@
 
 export interface OfficialDownloadConfig {
   githubReleasesUrl: string;
+  /** 微信公众号名称，用于设置页展示 */
+  wechatOfficialAccountName?: string;
+  /** 公众号文章或主页链接（https），可选 */
+  wechatOfficialAccountUrl?: string;
   netDiskUrl?: string;
   bilibiliUrl: string;
   douyinUrl: string;
@@ -15,7 +19,7 @@ const DOWNLOAD_CONFIG_URL = `${GITHUB_REPO_URL}/releases/latest/download/downloa
 
 const DEFAULT_DOWNLOAD_CONFIG: OfficialDownloadConfig = {
   githubReleasesUrl: `${GITHUB_REPO_URL}/releases`,
-  // Fork 版默认只保留 GitHub 渠道，社交链接统一回落到作者主页。
+  wechatOfficialAccountName: 'LuoScope',
   bilibiliUrl: 'https://github.com/RobustLuo',
   douyinUrl: 'https://github.com/RobustLuo',
 };
@@ -38,6 +42,13 @@ function mergeDownloadConfig(remoteConfig: unknown): OfficialDownloadConfig {
     githubReleasesUrl: isSafeHttpsUrl(config.githubReleasesUrl)
       ? config.githubReleasesUrl
       : DEFAULT_DOWNLOAD_CONFIG.githubReleasesUrl,
+    wechatOfficialAccountName:
+      typeof config.wechatOfficialAccountName === 'string' && config.wechatOfficialAccountName.trim()
+        ? config.wechatOfficialAccountName.trim()
+        : DEFAULT_DOWNLOAD_CONFIG.wechatOfficialAccountName,
+    wechatOfficialAccountUrl: isSafeHttpsUrl(config.wechatOfficialAccountUrl)
+      ? config.wechatOfficialAccountUrl
+      : undefined,
     bilibiliUrl: isSafeHttpsUrl(config.bilibiliUrl)
       ? config.bilibiliUrl
       : DEFAULT_DOWNLOAD_CONFIG.bilibiliUrl,

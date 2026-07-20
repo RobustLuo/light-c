@@ -50,18 +50,16 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'LuoScope v2.12.3'
+          releaseName: 'LuoScope v1.0.0'
           releaseBody: |
-            ## 更新内容
-            - **垃圾软件清理（新模块）**：识别常见捆绑软件并调用官方卸载程序
-            - **分栏布局模式**：设置 → 通用新增第三种布局，左侧模块状态总览 + 右侧专注操作
-            - **品牌更名为 LuoScope**：可执行文件、安装包、数据目录与旧版 LightC 自动迁移兼容
-            - **启动屏美化**：全幅毛玻璃 + 底部进度 Dock，去掉重复胶囊/badge
-            - **磁盘变化分析引导区美化**、**顶栏存储空间重构**、**管理员一键提权**
-            - **开发缓存迁移到 D 盘**：含 `setup-d-drive-cache.ps1` 一键脚本，防止 Cursor 沙盒占满 C 盘
-            - **Aurora UI 视觉升级**、**高端过渡动效**、**模块扫描态统一美化**
+            ## LuoScope 首个公开发布
 
-            请查看 [CHANGELOG.md](https://github.com/RobustLuo/light-c/blob/main/CHANGELOG.md) 了解详细版本变更。
+            - **全功能免费**：12 个清理/分析模块与分栏布局均免费开放
+            - **官方下载渠道**：GitHub Releases + 微信公众号「LuoScope」
+            - **垃圾软件清理**、**分栏布局**、**磁盘变化分析**、**品牌 LuoScope**（兼容旧版 LightC 数据迁移）
+            - **Aurora UI**、模块扫描态统一、启动屏与设置页体验优化
+
+            完整变更见 [CHANGELOG.md](https://github.com/RobustLuo/light-c/blob/main/CHANGELOG.md)。
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
@@ -245,6 +243,7 @@ jobs:
           # 官方下载渠道不写死在前端，随 Release 上传 download.json，便于后续调整网盘地址。
           $DownloadConfig = [ordered]@{
             githubReleasesUrl = "https://github.com/RobustLuo/light-c/releases"
+            wechatOfficialAccountName = "LuoScope"
             bilibiliUrl = "https://github.com/RobustLuo"
             douyinUrl = "https://github.com/RobustLuo"
           }

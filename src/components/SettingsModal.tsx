@@ -1,6 +1,5 @@
 // ============================================================================
 // 设置弹窗组件
-// 只负责弹窗生命周期、左侧导航和页面路由；具体设置页面按功能拆分维护。
 // ============================================================================
 
 import { useEffect, useState } from 'react';
@@ -32,7 +31,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { isVisible, shouldRender, enteredRef } = useOverlayAnimation(isOpen, { exitDuration: 280 });
   const { navRef, registerItem, indicator } = useSlidingNavIndicator(activeTab, { enabled: isOpen });
 
-  // 切换设置页时使用轻量交叉淡入，避免内容瞬间跳变
   useEffect(() => {
     if (activeTab === renderedTab) {
       return;

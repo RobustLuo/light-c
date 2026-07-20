@@ -56,7 +56,6 @@ export const APP_MODULE_META: AppModuleMeta[] = [
   { id: 'context-menu', label: '右键菜单清理', summary: '扫描并整理资源管理器右键菜单中的冗余项，减少菜单过长问题。', icon: MousePointerClick },
   { id: 'hotspot', label: '大目录分析', summary: '分析磁盘上占用最大的目录，快速定位空间热点与可清理目标。', icon: Flame },
   { id: 'disk-growth', label: '磁盘变化分析', summary: '对比两次快照，找出近期增长最快的目录与文件变化。', icon: HardDrive },
-  // AI 模型空间覆盖模型、LoRA、Embedding 和缓存，用“空间”强调这是占用分析而不是自动清理。
   { id: 'ai-models', label: 'AI 模型空间', summary: '统计本地 AI 模型、LoRA 与缓存占用，支持打开目录与按需删除。', icon: BrainCircuit },
 ];
 

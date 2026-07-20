@@ -201,6 +201,13 @@ fn default_data_dir() -> Option<PathBuf> {
     storage_root_dir().map(|dir| dir.join(DEFAULT_DATA_DIR_NAME))
 }
 
+/// 返回当前配置目录（config.json 所在目录）。
+pub fn get_config_dir() -> PathBuf {
+    storage_root_dir()
+        .map(|dir| dir.join(CONFIG_DIR_NAME))
+        .unwrap_or_else(|| PathBuf::from(".").join(CONFIG_DIR_NAME))
+}
+
 /// 配置文件存储路径；便携版配置也必须跟随 exe，移动整个目录后仍然有效。
 fn config_file_path() -> Option<PathBuf> {
     storage_root_dir().map(|dir| dir.join(CONFIG_DIR_NAME).join(CONFIG_FILE))

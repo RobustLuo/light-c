@@ -10,6 +10,7 @@ import { checkAdminPrivilege, verifyIntegrity, type VerifyIntegrityResult } from
 import { useSettings } from '../../contexts';
 import { tryRequestAdminElevation } from '../../hooks/useAutoAdminElevation';
 import { SettingsPanel, SettingsRow, SettingsSection } from './SettingsUi';
+import { WechatOfficialAccountChannel } from './WechatOfficialAccountChannel';
 
 export function SecuritySettings() {
   const [verifyResult, setVerifyResult] = useState<VerifyIntegrityResult | null>(null);
@@ -246,18 +247,10 @@ export function SecuritySettings() {
             </a>
           )}
 
-          <a
-            href={downloadConfig?.githubReleasesUrl ?? 'https://github.com/RobustLuo'}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-between rounded-xl bg-[var(--bg-card)] px-3 py-3 transition-colors hover:bg-[var(--bg-hover)] group"
-          >
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-[var(--text-primary)]">作者 GitHub</p>
-              <p className="mt-0.5 text-xs text-[var(--text-muted)]">Fork 版由 RobustLuo 维护，请从 GitHub Releases 获取构建</p>
-            </div>
-            <ExternalLink className="h-4 w-4 shrink-0 text-[var(--text-faint)] group-hover:text-[var(--brand-green)]" />
-          </a>
+          <WechatOfficialAccountChannel
+            accountName={downloadConfig?.wechatOfficialAccountName ?? 'LuoScope'}
+            accountUrl={downloadConfig?.wechatOfficialAccountUrl}
+          />
         </div>
       </div>
 
@@ -267,7 +260,7 @@ export function SecuritySettings() {
           <div className="min-w-0 space-y-2">
             <p className="text-sm font-medium text-[var(--text-primary)]">第三方渠道的风险</p>
             <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
-              公众号、论坛、网盘分享等第三方渠道发布的 LuoScope 文件，可能存在版本滞后、二次打包、捆绑推广软件或广告程序等问题。
+              非官方转载的论坛、网盘分享等第三方渠道发布的 LuoScope 文件，可能存在版本滞后、二次打包、捆绑推广软件或广告程序等问题。
             </p>
             <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
               部分网盘链接需要积分或关注，属于借助本软件的商业引流行为。以上风险与作者无关，作者对第三方渠道分发的文件内容不承担任何责任。
