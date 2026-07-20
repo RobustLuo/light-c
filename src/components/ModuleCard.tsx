@@ -49,6 +49,8 @@ export interface ModuleCardProps {
   scanButtonText?: string;
   /** 是否禁用扫描按钮 */
   scanDisabled?: boolean;
+  /** 隐藏头部扫描按钮（页面模式 idle 引导区已有主按钮时使用） */
+  hideScanButton?: boolean;
   /** 展开后的内容 */
   children: ReactNode;
   /** 标题旁额外内容，适合放轻量筛选器或模式切换。 */
@@ -90,6 +92,7 @@ export function ModuleCard({
   onScan,
   scanButtonText,
   scanDisabled = false,
+  hideScanButton = false,
   children,
   titleExtra,
   headerExtra,
@@ -108,8 +111,8 @@ export function ModuleCard({
   const getStatusBadge = () => {
     if (isScanning) {
       return (
-        <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-[var(--brand-green-10)] text-[var(--brand-green)]">
-          <Loader2 className="w-3 h-3 animate-spin" />
+        <span className="module-card-scan-badge" aria-live="polite">
+          <span className="module-card-scan-badge__dot" aria-hidden />
           扫描中
         </span>
       );
@@ -142,129 +145,119 @@ export function ModuleCard({
     return null;
   };
 
-  // 获取扫描按钮文本
+  // 扫描中按钮仅保留图标，避免与标题徽章重复「扫描中」文案
   const getButtonText = () => {
+    if (isScanning) return null;
     if (scanButtonText) return scanButtonText;
-    if (isScanning) return '扫描中...';
     if (isDone) return '重新扫描';
     return '开始扫描';
   };
 
+  const buttonText = getButtonText();
+
   return (
-    <div 
+    <div
       className={`
-        /* 微信风格卡片：纯白背景 + 极淡阴影 + 大圆角 */
-        bg-[var(--bg-card)] rounded-2xl ${allowStickyContent ? 'overflow-visible' : 'overflow-hidden'}
-        transition-all duration-300 ease-out
+        module-card surface-card overflow-hidden
+        ${allowStickyContent ? '!overflow-visible' : ''}
+        ${isPageVariant ? 'module-card--page' : ''}
         ${isPageVariant
-          ? 'shadow-sm ring-1 ring-[var(--border-color)]'
+          ? 'shadow-[var(--shadow-sm)]'
           : expanded
-            ? 'shadow-sm ring-1 ring-[var(--brand-green-20)]'
-            : 'shadow-sm hover:shadow-md'
+            ? 'shadow-[var(--shadow-md)] ring-1 ring-[var(--brand-green-20)]'
+            : ''
         }
       `}
     >
-      {/* 卡片头部 - 增加内边距提供呼吸空间 */}
-      <div className="p-6">
-        <div className="flex items-center gap-4">
-          {/* 展开/收起按钮 */}
+      <div className={`module-card-header ${isPageVariant ? 'module-card-header-page' : ''}`}>
+        {/* 主信息行：图标 + 标题 + 扫描按钮，避免所有控件挤在一行 */}
+        <div className="module-card-header-main">
           {!isPageVariant && (
             <button
               onClick={onToggleExpand}
-              className={`
-                text-[var(--text-muted)] transition-transform duration-200 p-1 -ml-1
-                hover:text-[var(--text-secondary)]
-                ${expanded ? 'rotate-0' : '-rotate-90'}
-              `}
+              className={`module-card-expand btn-ghost ${expanded ? 'module-card-expand-open' : ''}`}
+              aria-label={expanded ? '收起模块' : '展开模块'}
             >
-              <ChevronDown className="w-5 h-5" />
+              <ChevronDown className="h-5 w-5" />
             </button>
           )}
 
-          {/* 模块图标 - 微信绿 10% 透明度圆角容器 */}
-          <div className={`w-14 h-14 rounded-2xl ${iconBgClass} flex items-center justify-center shrink-0`}>
-            {icon}
-          </div>
+          <div className={`module-card-icon ${iconBgClass}`}>{icon}</div>
 
-          {/* 模块信息 - 清晰的文字层次 */}
           <div
-            className={`flex-1 min-w-0 ${isPageVariant ? '' : 'cursor-pointer'}`}
+            className={`module-card-copy min-w-0 flex-1 ${isPageVariant ? '' : 'cursor-pointer'}`}
             onClick={isPageVariant ? undefined : onToggleExpand}
           >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <h3 className="text-[15px] font-bold text-[var(--text-primary)]">{title}</h3>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h3 className="module-card-title">{title}</h3>
               {titleExtra}
               {getStatusBadge()}
             </div>
-            <p className="text-[13px] text-[var(--text-muted)] mt-1 truncate">{description}</p>
+            <p className="module-card-desc">{description}</p>
+            {isPageVariant && status !== 'idle' && (
+              <p className="module-card-page-hint">
+                清理/删除会二次确认，请仔细核对结果后再执行。
+              </p>
+            )}
           </div>
 
-          {/* 统计信息 - 使用 tabular-nums 确保数字稳定不抖动 */}
-          {isDone && fileCount > 0 && (
-            <div className="text-right shrink-0 mr-3">
-              {!hideTotalSize && <p className="text-xl font-bold text-[var(--brand-green)] tabular-nums">{formatSize(totalSize)}</p>}
-              <p className="text-[13px] text-[var(--text-muted)] tabular-nums">{fileCount.toLocaleString()} {countLabel}</p>
-            </div>
-          )}
-
-          {/* 额外内容 */}
-          {headerExtra}
-
-          {/* 扫描按钮：完成态也保留按钮边界，避免“重新扫描/检测”在列表里看起来像普通文字。 */}
+          {!hideScanButton && (
           <button
-            onClick={(e) => {
-              e.stopPropagation();
+            onClick={(event) => {
+              event.stopPropagation();
               onScan();
             }}
             disabled={isScanning || scanDisabled}
-            className={`
-              flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-200 shrink-0
-              border shadow-sm active:scale-[0.98]
-              ${isScanning || scanDisabled
-                ? 'border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-faint)] cursor-not-allowed shadow-none'
-                : isDone
-                  ? 'border-[var(--brand-green-20)] bg-[var(--brand-green-10)] text-[var(--brand-green)] hover:bg-[var(--brand-green)] hover:text-white hover:border-[var(--brand-green)] hover:shadow-[0_6px_18px_rgba(7,193,96,0.18)]'
-                  : 'border-[var(--brand-green)] bg-[var(--brand-green)] text-white hover:bg-[var(--brand-green-hover)] hover:border-[var(--brand-green-hover)] hover:shadow-[0_6px_18px_rgba(7,193,96,0.22)]'
-              }
-            `}
+            className={`module-card-scan ${isScanning || scanDisabled ? 'module-card-scan-disabled' : isDone ? 'module-card-scan-secondary' : 'btn-primary'}`}
           >
-            {isScanning ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Search className="w-4 h-4" />
-            )}
-            {getButtonText()}
+            {isScanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            {buttonText && <span>{buttonText}</span>}
           </button>
+          )}
         </div>
 
-        {/* 扫描进度条 - 微信绿流光动画 */}
+        {/* 统计 + 模块操作：单独一行，页面模式下不再和标题抢宽度 */}
+        {(isDone && fileCount > 0) || headerExtra ? (
+          <div className="module-card-toolbar">
+            {isDone && fileCount > 0 ? (
+              <div className="module-stat-chip">
+                {!hideTotalSize && <span className="module-stat-value tabular-nums">{formatSize(totalSize)}</span>}
+                {!hideTotalSize && <span className="module-stat-dot" aria-hidden="true" />}
+                <span className="module-stat-meta tabular-nums">
+                  {fileCount.toLocaleString()} {countLabel}
+                </span>
+              </div>
+            ) : (
+              <div />
+            )}
+            {headerExtra && <div className="module-card-toolbar-actions">{headerExtra}</div>}
+          </div>
+        ) : null}
+
         {isScanning && (
-          <div className="mt-5 pt-5 border-t border-[var(--border-muted)]">
-            <div className="h-1.5 bg-[var(--bg-hover)] rounded-full overflow-hidden">
-              <div 
-                className="h-full rounded-full"
-                style={{ 
-                  width: '100%',
-                  background: `linear-gradient(90deg, transparent, var(--brand-green-20), transparent)`,
-                  backgroundSize: '200% 100%',
-                  animation: 'shimmer 1.5s ease-in-out infinite'
-                }} 
-              />
+          <div className="module-card-progress">
+            <div className="module-card-progress-track">
+              <div className="module-card-progress-shimmer" />
             </div>
           </div>
         )}
 
-        {/* 错误信息 */}
         {hasError && error && (
-          <div className="mt-4 px-4 py-3 bg-[var(--color-danger)]/10 rounded-xl">
-            <p className="text-[13px] text-[var(--color-danger)]">{error}</p>
+          <div className="module-card-error">
+            <p>{error}</p>
           </div>
         )}
       </div>
 
       {/* 展开内容 - 手风琴动画 */}
       <AccordionContent expanded={contentExpanded} animated={!isPageVariant && !allowStickyContent}>
-        <div className="border-t border-[var(--border-color)] pb-2">
+        <div
+          className={
+            isPageVariant
+              ? 'module-card-page-body'
+              : 'border-t border-[var(--border-muted)] pb-2'
+          }
+        >
           {children}
         </div>
       </AccordionContent>
@@ -304,7 +297,7 @@ function AccordionContent({ expanded, children, animated = true }: AccordionCont
       const timer = setTimeout(() => {
         setHeight('auto');
         setIsAnimating(false);
-      }, 300);
+      }, 320);
       
       return () => clearTimeout(timer);
     } else if (!expanded && wasExpanded) {
@@ -323,7 +316,7 @@ function AccordionContent({ expanded, children, animated = true }: AccordionCont
       
       const timer = setTimeout(() => {
         setIsAnimating(false);
-      }, 300);
+      }, 320);
       
       return () => clearTimeout(timer);
     }
@@ -335,19 +328,24 @@ function AccordionContent({ expanded, children, animated = true }: AccordionCont
 
   if (!animated) {
     // 页面模式或悬浮操作模块不做高度动画，避免 overflow 规则截断 sticky 子元素。
-    return expanded ? <div ref={contentRef}>{children}</div> : null;
+    return expanded ? (
+      <div ref={contentRef} className="module-card-page-stage">
+        {children}
+      </div>
+    ) : null;
   }
 
   return (
     <div
       ref={contentRef}
+      className="accordion-motion"
+      data-expanded={expanded ? 'true' : 'false'}
       style={{
         height: typeof height === 'number' ? `${height}px` : height,
         overflow: 'hidden',
-        transition: 'height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
-      {children}
+      <div className="accordion-motion-inner">{children}</div>
     </div>
   );
 }

@@ -1,0 +1,3 @@
+# Rust 编译产物固定到 D 盘，与 scripts/set-dev-cache-env.ps1 保持一致
+[build]
+target-dir = "D:/DevCache/LuoScope/cargo-target"

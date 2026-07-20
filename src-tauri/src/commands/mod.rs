@@ -7,6 +7,7 @@
 // ============================================================================
 
 mod ai_models;
+mod bloatware;
 mod app;
 mod data;
 mod delete;
@@ -26,6 +27,7 @@ mod verify;
 
 // 公共类型（供前端和其他模块使用）
 pub use ai_models::*;
+pub use bloatware::*;
 pub use app::*;
 pub use data::*;
 pub use delete::*;

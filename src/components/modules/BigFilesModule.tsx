@@ -4,12 +4,15 @@
 // ============================================================================
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { FileBox, Trash2, Loader2, FileWarning, FolderOpen, ExternalLink, StopCircle, Search } from 'lucide-react';
+import { FileBox, Trash2, FileWarning, FolderOpen, ExternalLink, StopCircle, Search } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { ModuleCard } from '../ModuleCard';
 import { ConfirmDialog } from '../ConfirmDialog';
+import { OperationProgressOverlay } from '../OperationProgressOverlay';
 import { EmptyState } from '../EmptyState';
+import { EmptyScanAction } from '../EmptyScanAction';
+import { ModulePageContent } from '../ModulePageContent';
+import { ModuleScanPanel, ModuleScanStatusBar } from '../ModuleScanPanel';
 import { useToast } from '../Toast';
 import {
   defaultDriveLetter,
@@ -25,13 +28,14 @@ import { formatSize, formatDate, getRiskLevelColor, getRiskLevelBgColor, getRisk
 import { openSearchUrl } from '../../utils/searchEngine';
 import type { LargeFileEntry, LargeFileScanProgress } from '../../types';
 import { shouldSkipInactivePageRender, type ModuleRenderProps } from './moduleProps';
+import { useOneClickScanListener } from '../../hooks/useOneClickScanListener';
 
 // ============================================================================
 // 组件实现
 // ============================================================================
 
 export function BigFilesModule({ layoutMode = 'cards', isPageActive = true }: ModuleRenderProps) {
-  const { moduleState, expandedModule, setExpandedModule, updateModuleState, triggerHealthRefresh, oneClickScanTrigger } = useModuleDashboard('bigFiles');
+  const { moduleState, expandedModule, setExpandedModule, updateModuleState, triggerHealthRefresh } = useModuleDashboard('bigFiles');
   const { showToast } = useToast();
   const { settings } = useSettings();
   const { drives } = useLocalDrives();
@@ -40,8 +44,6 @@ export function BigFilesModule({ layoutMode = 'cards', isPageActive = true }: Mo
   const scanningRef = useRef(false);
   // 扫描开始时间
   const scanStartRef = useRef(0);
-  // 用于跟踪是否已处理过当前的一键扫描触发
-  const lastScanTriggerRef = useRef(0);
 
   // 本地状态
   const [files, setFiles] = useState<LargeFileEntry[]>([]);
@@ -163,13 +165,7 @@ export function BigFilesModule({ layoutMode = 'cards', isPageActive = true }: Mo
     }
   }, [updateModuleState, setExpandedModule, settings.bigFilesScanLimit, selectedDriveLetter]);
 
-  // 监听一键扫描触发器
-  useEffect(() => {
-    if (oneClickScanTrigger > 0 && oneClickScanTrigger !== lastScanTriggerRef.current) {
-      lastScanTriggerRef.current = oneClickScanTrigger;
-      handleScan();
-    }
-  }, [oneClickScanTrigger, handleScan]);
+  useOneClickScanListener('bigFiles', handleScan);
 
   // 停止扫描
   const handleStopScan = useCallback(async () => {
@@ -332,23 +328,12 @@ export function BigFilesModule({ layoutMode = 'cards', isPageActive = true }: Mo
 
   return (
     <>
-      {/* 删除进度遮罩 - 使用 Portal 渲染到 body 确保覆盖全屏 */}
-      {isDeleting && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center">
-          <div className="bg-[var(--bg-card)] rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 max-w-sm mx-4">
-            <div className="w-16 h-16 rounded-full bg-rose-500/10 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 text-rose-500 animate-spin" />
-            </div>
-            <div className="text-center">
-              <h3 className="text-lg font-semibold text-[var(--fg-primary)]">正在删除文件</h3>
-              <p className="text-sm text-[var(--fg-muted)] mt-1">
-                正在删除 {selectedFiles.size} 个文件，请稍候...
-              </p>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      <OperationProgressOverlay
+        isOpen={isDeleting}
+        title="正在删除文件"
+        description={`正在删除 ${selectedFiles.size.toLocaleString()} 个文件，请稍候…`}
+        tone="brand"
+      />
 
       {/* 删除确认弹窗 */}
       <ConfirmDialog
@@ -419,70 +404,71 @@ export function BigFilesModule({ layoutMode = 'cards', isPageActive = true }: Mo
           </>
         }
       >
-        {/* 展开内容 */}
-        <div>
+        {/* 展开内容：页面模式 idle 时不包 min-h，避免圆角卡片底部留白 */}
+        {layoutMode === 'pages' && moduleState.status === 'idle' && files.length === 0 ? (
+          <ModulePageContent layoutMode={layoutMode} centerIdle>
+            <EmptyState
+              page
+              icon={FileBox}
+              title="尚未扫描大文件"
+              description="快速找出占用空间较大的文件。"
+              action={<EmptyScanAction onClick={handleScan} disabled={isScanning} />}
+            />
+          </ModulePageContent>
+        ) : (
+        <div className={layoutMode === 'pages' ? 'module-page-content module-page-content--filled' : ''}>
           {/* 扫描进度 + 引擎 + 时长（扫描中 & 扫描完成后都显示） */}
           {(isScanning || scanBackend) && currentPath && (
-            <div className={`px-4 py-2 border-b border-[var(--border-default)] text-xs truncate flex items-center gap-3 ${
-              scanBackend === 'mft' ? 'bg-[var(--brand-green-10)]' : 'bg-emerald-500/5'
-            }`}>
-              <span className="truncate text-[var(--fg-muted)]">{isScanning ? '正在扫描:' : '扫描完成:'} {scanMessage || currentPath}</span>
-              {scanBackend && (
-                <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                  scanBackend === 'mft'
-                    ? 'bg-[var(--brand-green)] text-white'
-                    : 'bg-[var(--bg-hover)] text-[var(--text-muted)]'
-                }`}>
-                  {scanBackend === 'mft' ? '⚡ MFT 全量扫描' : '常规'}
-                </span>
-              )}
-              <span className="shrink-0 text-[var(--fg-faint)]">{scannedCount.toLocaleString()} 文件</span>
-              {scanStage && scanBackend === 'mft' && (
-                <span className="shrink-0 text-[var(--fg-faint)]">{scanStage}</span>
-              )}
-              {displayElapsedSeconds > 0 && (
-                <span className="shrink-0 text-[var(--fg-faint)]">{displayElapsedSeconds}s</span>
-              )}
-            </div>
+            <ModuleScanStatusBar
+              message={scanMessage || currentPath}
+              isScanning={isScanning}
+              backend={scanBackend}
+              backendLabel={scanBackend === 'mft' ? 'MFT 全量扫描' : scanBackend === 'walkdir' ? '常规' : undefined}
+              fileCount={scannedCount}
+              stage={scanStage && scanBackend === 'mft' ? scanStage : undefined}
+              elapsedSeconds={displayElapsedSeconds > 0 ? displayElapsedSeconds : undefined}
+            />
           )}
 
-          {/* 空状态 */}
-          {moduleState.status === 'idle' && files.length === 0 && (
+          {/* 空状态（卡片模式） */}
+          {layoutMode !== 'pages' && moduleState.status === 'idle' && files.length === 0 && (
             <div className="p-4">
               <EmptyState
                 icon={FileBox}
                 title="尚未扫描大文件"
-                description="点击开始扫描，快速找出占用空间较大的文件。"
+                description="快速找出占用空间较大的文件。"
+                action={<EmptyScanAction onClick={handleScan} disabled={isScanning} />}
               />
             </div>
           )}
 
           {/* 扫描中状态 */}
           {isScanning && files.length === 0 && (
-            <div className="py-12 flex flex-col items-center justify-center text-center">
-              <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-3">
-                <Loader2 className="w-7 h-7 text-emerald-500 animate-spin" />
-              </div>
-              {/* 扫描引擎模式 — 居中醒目展示 */}
-              {scanBackend === 'mft' && (
-                <span className="mb-2 px-3 py-1 rounded-full text-xs font-semibold bg-[var(--brand-green-10)] text-[var(--brand-green)] border border-[var(--brand-green-20)]">
-                  ⚡ MFT 全量扫描
-                </span>
-              )}
-              <p className="text-sm font-medium text-[var(--fg-secondary)]">
-                {scanBackend === 'mft' ? `MFT全量模式扫描${selectedDriveLabel}...`
-                  : scanBackend === 'walkdir' ? `正在遍历${selectedDriveLabel}文件...`
-                  : '正在扫描中...'}
-              </p>
-              <p className="text-xs text-[var(--fg-muted)] mt-1">
-                扫描引擎: {scanBackend || '检测中...'}
-              </p>
-              {scanMessage && (
-                <p className="text-xs text-[var(--fg-faint)] mt-1 max-w-md truncate">
-                  {scanMessage}
-                </p>
-              )}
-            </div>
+            <ModuleScanPanel
+              icon={FileBox}
+              title={
+                scanBackend === 'mft'
+                  ? `MFT 全量模式扫描 ${selectedDriveLabel}`
+                  : scanBackend === 'walkdir'
+                    ? `正在遍历 ${selectedDriveLabel} 文件`
+                    : '正在扫描大文件'
+              }
+              description={
+                scanBackend === 'mft'
+                  ? '通过 MFT 直读快速枚举全分区文件，并按体积排序'
+                  : '正在遍历磁盘文件并识别体积较大的项目'
+              }
+              detail={scanMessage || undefined}
+              backend={scanBackend}
+              stats={[
+                ...(scannedCount > 0
+                  ? [{ label: '已扫描', value: scannedCount.toLocaleString() }]
+                  : []),
+                ...(displayElapsedSeconds > 0
+                  ? [{ label: '耗时', value: `${displayElapsedSeconds}s` }]
+                  : []),
+              ]}
+            />
           )}
 
           {/* 文件列表 */}
@@ -601,6 +587,7 @@ export function BigFilesModule({ layoutMode = 'cards', isPageActive = true }: Mo
             </div>
           )}
         </div>
+        )}
       </ModuleCard>
     </>
   );

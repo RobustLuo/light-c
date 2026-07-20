@@ -5,173 +5,193 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { motion } from 'framer-motion';
-import { 
-  SettingsModal, 
-  TitleBar, 
-  ToastProvider, 
-  WelcomeModal, 
+import {
+  SettingsModal,
+  TitleBar,
+  ToastProvider,
+  WelcomeModal,
   shouldShowWelcome,
   UpdateModal,
   DashboardHeader,
+  DashboardGuideBanner,
   SplashScreen,
-  // Footer,
   AnchorNav,
   BackToTopButton,
+  SplitModuleNav,
 } from './components';
 import { DashboardProvider, useDashboardActions, FontSizeProvider, SettingsProvider, useSettings } from './contexts';
+import { useAutoAdminElevation } from './hooks/useAutoAdminElevation';
+import type { AppModuleId } from './config/moduleMeta';
 import { APP_MODULES } from './config/modules';
+import { isSingleModuleLayout, isSplitLayout, toModuleLayoutMode } from './utils/layoutMode';
 import './App.css';
-
-function PageTransitionAccent({ active }: { active: boolean }) {
-  if (!active) return null;
-
-  return (
-    <motion.div
-      // 只动画一条轻量流光，不让大结果 DOM 参与复杂过渡，兼顾质感和性能。
-      className="pointer-events-none absolute inset-x-3 top-0 z-20 h-1 overflow-hidden rounded-full"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: [0, 1, 0.85, 0] }}
-      transition={{ duration: 0.56, ease: 'easeOut' }}
-    >
-      <motion.div
-        className="h-full w-2/3 rounded-full bg-gradient-to-r from-transparent via-[var(--brand-green)] to-transparent shadow-[0_0_18px_rgba(7,193,96,0.65)]"
-        initial={{ x: '-130%' }}
-        animate={{ x: '170%' }}
-        transition={{ duration: 0.56, ease: [0.22, 1, 0.36, 1] }}
-      />
-    </motion.div>
-  );
-}
-
-// ============================================================================
-// 仪表盘内容组件
-// ============================================================================
 
 function DashboardContent() {
   const { triggerOneClickScan } = useDashboardActions();
-  const { settings } = useSettings();
+  const { settings, updateSettings } = useSettings();
+  useAutoAdminElevation();
 
-  // 设置弹窗状态
   const [showSettings, setShowSettings] = useState(false);
-  // 欢迎弹窗状态
   const [showWelcome, setShowWelcome] = useState(() => shouldShowWelcome());
-  // 两种布局共用同一个内容滚动区，模块实例不会因为模式切换被卸载，扫描结果和展开状态才能保留。
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const isPageMode = settings.layoutMode === 'pages';
-  const [visibleModuleId, setVisibleModuleId] = useState(settings.activeModuleId);
-  const [transitionModuleId, setTransitionModuleId] = useState(settings.activeModuleId);
-  const [pageTransitionSequence, setPageTransitionSequence] = useState(0);
-  const visibleModuleIdRef = useRef(settings.activeModuleId);
+  const layoutMode = settings.layoutMode;
+  const singleModuleLayout = isSingleModuleLayout(layoutMode);
+  const splitLayout = isSplitLayout(layoutMode);
+  const moduleLayoutMode = toModuleLayoutMode(layoutMode);
 
-  // 一键扫描：通过触发器并发启动所有模块扫描
+  const [visibleModuleId, setVisibleModuleId] = useState(settings.activeModuleId);
+  const [pageEnteringModuleId, setPageEnteringModuleId] = useState<string | null>(
+    () => (singleModuleLayout ? settings.activeModuleId : null),
+  );
+  const visibleModuleIdRef = useRef(settings.activeModuleId);
+  const pageEnterTimerRef = useRef<number | null>(null);
+
+  const triggerPageEnter = useCallback((moduleId: string) => {
+    if (pageEnterTimerRef.current !== null) {
+      window.clearTimeout(pageEnterTimerRef.current);
+    }
+    setPageEnteringModuleId(null);
+    window.requestAnimationFrame(() => {
+      setPageEnteringModuleId(moduleId);
+    });
+    pageEnterTimerRef.current = window.setTimeout(() => {
+      setPageEnteringModuleId(null);
+      pageEnterTimerRef.current = null;
+    }, 520);
+  }, []);
+
   const handleOneClickScan = useCallback(() => {
     triggerOneClickScan();
   }, [triggerOneClickScan]);
 
+  /** 顶栏洞察条：单模块布局切模块，卡片模式滚动到锚点 */
+  const handleNavigateModule = useCallback(
+    (moduleId: AppModuleId) => {
+      if (singleModuleLayout) {
+        updateSettings({ activeModuleId: moduleId });
+        return;
+      }
+
+      const container = scrollContainerRef.current;
+      if (!container) return;
+
+      const targetElement = container.querySelector(`[data-module-id="${moduleId}"]`);
+      if (!targetElement) return;
+
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = targetElement.getBoundingClientRect();
+      const scrollTop = container.scrollTop + targetRect.top - containerRect.top - 16;
+      container.scrollTo({ top: scrollTop, behavior: 'smooth' });
+    },
+    [singleModuleLayout, updateSettings],
+  );
+
   useEffect(() => {
-    if (!isPageMode) {
+    if (!singleModuleLayout) {
       setVisibleModuleId(settings.activeModuleId);
-      setTransitionModuleId(settings.activeModuleId);
       visibleModuleIdRef.current = settings.activeModuleId;
+      setPageEnteringModuleId(null);
+      if (pageEnterTimerRef.current !== null) {
+        window.clearTimeout(pageEnterTimerRef.current);
+        pageEnterTimerRef.current = null;
+      }
       return;
     }
 
     const previousModuleId = visibleModuleIdRef.current;
     if (settings.activeModuleId === previousModuleId) return;
 
-    // 页面模式下只让新页面做轻量入场动画，旧页面立即隐藏。
-    // 大目录/全盘分析这类结果 DOM 很重，如果旧页面也参与离场动画，会触发大面积合成和掉帧。
-    // 切换前先回到顶部，防止从长页面切到短页面时继承旧 scrollTop，出现大段空白和多余滚动条。
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     visibleModuleIdRef.current = settings.activeModuleId;
-    // 用序号切换两组等价 class，避免重新挂载模块也能稳定重播 CSS 入场动画。
-    setPageTransitionSequence((current) => current + 1);
-    setTransitionModuleId(settings.activeModuleId);
     setVisibleModuleId(settings.activeModuleId);
-  }, [isPageMode, settings.activeModuleId]);
+    triggerPageEnter(settings.activeModuleId);
+  }, [singleModuleLayout, settings.activeModuleId, triggerPageEnter]);
 
   useEffect(() => {
-    if (!isPageMode) return;
+    return () => {
+      if (pageEnterTimerRef.current !== null) {
+        window.clearTimeout(pageEnterTimerRef.current);
+      }
+    };
+  }, []);
 
-    // 从卡片模式进入页面模式时也回到顶部，避免继承卡片总览的滚动位置。
+  useEffect(() => {
+    if (!singleModuleLayout) return;
+
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
-  }, [isPageMode]);
+    triggerPageEnter(settings.activeModuleId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [singleModuleLayout]);
 
   return (
-    <div className="h-screen flex flex-col bg-[var(--bg-base)] overflow-hidden select-none">
-      {/* 自定义标题栏 */}
+    <div className="h-screen flex flex-col aurora-shell overflow-hidden select-none">
       <TitleBar onSettingsClick={() => setShowSettings(true)} />
-
-      {/* 顶部统计栏 */}
-      <DashboardHeader 
-        onOneClickScan={handleOneClickScan}
-        onShowWelcome={() => setShowWelcome(true)}
-        hideOneClickScan={isPageMode}
-      />
-
-      {/* 设置弹窗 */}
       <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
-
-      {/* 欢迎弹窗 */}
       <WelcomeModal isOpen={showWelcome} onClose={() => setShowWelcome(false)} />
-
-      {/* 自动更新检查弹窗 */}
       <UpdateModal autoCheck={true} />
 
-      {/* 侧边导航：卡片模式滚动到锚点，页面模式切换当前模块。 */}
-      <AnchorNav scrollContainerRef={scrollContainerRef} />
-      <BackToTopButton scrollContainerRef={scrollContainerRef} />
+      <div className="flex flex-1 min-h-0 min-w-0">
+        {splitLayout ? (
+          <SplitModuleNav activeModuleId={visibleModuleId} />
+        ) : (
+          <AnchorNav scrollContainerRef={scrollContainerRef} />
+        )}
 
-      {/* 主内容区 - 页面模式下模块实例仍常驻，但 inactive 模块会自行跳过重结果 DOM。 */}
-      <main className="flex-1 min-h-0 overflow-hidden bg-[var(--bg-base)]">
-        <div className="h-full min-h-0 flex flex-col">
-          <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-auto">
-            <div className={`${isPageMode ? 'max-w-6xl min-h-full box-border' : 'max-w-5xl space-y-5'} relative w-full mx-auto p-6`}>
-              {APP_MODULES.map((moduleConfig) => {
-                const ModuleComponent = moduleConfig.component;
-                const isActivePage = visibleModuleId === moduleConfig.id;
-                const shouldPlayPageEnter = isPageMode && isActivePage && transitionModuleId === moduleConfig.id;
-                const pageEnterClass = shouldPlayPageEnter
-                  ? pageTransitionSequence % 2 === 0
-                    ? 'page-content-enter-even'
-                    : 'page-content-enter-odd'
-                  : '';
-                return (
-                  <div
-                    key={moduleConfig.id}
-                    data-module-id={moduleConfig.id}
-                    className={
-                      isPageMode
-                        ? isActivePage
-                          ? `relative z-10 overflow-visible ${pageEnterClass}`
-                          : 'hidden'
-                        : 'relative'
-                    }
-                    style={isActivePage && isPageMode ? { contentVisibility: 'auto' } : undefined}
-                  >
-                    <PageTransitionAccent active={isPageMode && isActivePage && transitionModuleId === moduleConfig.id} />
-                    <ModuleComponent layoutMode={settings.layoutMode} isPageActive={isActivePage} />
-                  </div>
-                );
-              })}
+        <div className="flex flex-col flex-1 min-w-0 min-h-0">
+          <DashboardHeader
+            onOneClickScan={handleOneClickScan}
+            onShowWelcome={() => setShowWelcome(true)}
+            hideOneClickScan={singleModuleLayout}
+            onNavigateModule={handleNavigateModule}
+          />
 
-              {/* 底部留白只给卡片总览使用，页面模式由固定 Footer 承接底部空间。 */}
-              {!isPageMode && <div className="h-4" />}
+          <BackToTopButton scrollContainerRef={scrollContainerRef} />
+
+          <main className="dashboard-main flex-1 min-h-0 overflow-hidden relative z-[1]">
+            <div className="dashboard-main-inner h-full min-h-0 flex flex-col">
+              <div
+                ref={scrollContainerRef}
+                className={`dashboard-scroll flex-1 min-h-0 overflow-auto ${singleModuleLayout ? 'dashboard-scroll--page' : ''}`}
+              >
+                <div
+                  className={`dashboard-content-shell ${
+                    singleModuleLayout ? 'dashboard-content-shell--page' : 'dashboard-content-shell--cards'
+                  }`}
+                >
+                  <DashboardGuideBanner hidden={singleModuleLayout} />
+
+                  {APP_MODULES.map((moduleConfig) => {
+                    const ModuleComponent = moduleConfig.component;
+                    const isActivePage = visibleModuleId === moduleConfig.id;
+                    const isPageEntering = pageEnteringModuleId === moduleConfig.id;
+                    return (
+                      <div
+                        key={moduleConfig.id}
+                        data-module-id={moduleConfig.id}
+                        className={
+                          singleModuleLayout
+                            ? isActivePage
+                              ? `page-content-stage relative z-10 overflow-visible${isPageEntering ? ' page-content-enter' : ''}`
+                              : 'hidden'
+                            : 'relative'
+                        }
+                        style={isActivePage && singleModuleLayout ? { contentVisibility: 'auto' } : undefined}
+                      >
+                        <ModuleComponent layoutMode={moduleLayoutMode} isPageActive={isActivePage} />
+                      </div>
+                    );
+                  })}
+
+                  {!singleModuleLayout && <div className="h-4" />}
+                </div>
+              </div>
             </div>
-          </div>
-
-          {/* Footer 不放进滚动区，短页面不会因为版权区参与滚动而出现额外空白。 */}
-          {/* <Footer /> */}
+          </main>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
-
-// ============================================================================
-// 主应用组件
-// ============================================================================
 
 function App() {
   const [windowLabel, setWindowLabel] = useState<string | null>(null);
@@ -180,17 +200,14 @@ function App() {
     getCurrentWindow().label && setWindowLabel(getCurrentWindow().label);
   }, []);
 
-  // 等待窗口标签检测完成
   if (windowLabel === null) {
     return null;
   }
 
-  // 启动屏幕窗口
   if (windowLabel === 'splashscreen') {
     return <SplashScreen />;
   }
 
-  // 主窗口
   return (
     <FontSizeProvider>
       <SettingsProvider>

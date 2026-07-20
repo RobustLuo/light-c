@@ -1,8 +1,8 @@
 [package]
-name = "LightC"
-version = "2.12.2"
-description = "Windows C盘智能清理工具"
-authors = ["Evan Lau"]
+name = "LuoScope"
+version = "2.12.3"
+description = "Windows 智能磁盘空间管理工具"
+authors = ["RobustLuo"]
 edition = "2021"
 license-file = "../LICENSE"
 

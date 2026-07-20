@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { readMigratedStorageItem } from '../utils/storageMigration';
 
 /** 主题类型 */
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -21,7 +22,8 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-const STORAGE_KEY = 'c-cleanup-theme';
+const STORAGE_KEY = 'luoscope-theme';
+const LEGACY_STORAGE_KEYS = ['c-cleanup-theme'];
 
 /** 获取系统主题 */
 function getSystemTheme(): AppliedTheme {
@@ -47,12 +49,12 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   // 从localStorage读取保存的主题模式
   const [mode, setModeState] = useState<ThemeMode>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = readMigratedStorageItem(STORAGE_KEY, LEGACY_STORAGE_KEYS);
       if (saved === 'light' || saved === 'dark' || saved === 'system') {
         return saved;
       }
     }
-    return 'dark'; // 默认深色主题
+    return 'light'; // 默认浅色白底主题
   });
 
   const [theme, setTheme] = useState<AppliedTheme>(() => resolveTheme(mode));

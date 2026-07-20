@@ -8,7 +8,11 @@ import { createPortal } from 'react-dom';
 import { Package, Loader2, Trash2, FolderOpen, AlertTriangle, CheckCircle2, Smartphone, HardDrive, ChevronDown, ChevronUp, XCircle } from 'lucide-react';
 import { ModuleCard } from '../ModuleCard';
 import { ConfirmDialog } from '../ConfirmDialog';
+import { OperationProgressOverlay } from '../OperationProgressOverlay';
 import { EmptyState } from '../EmptyState';
+import { EmptyScanAction } from '../EmptyScanAction';
+import { ModulePageContent } from '../ModulePageContent';
+import { ModuleScanPanel } from '../ModuleScanPanel';
 import { useModuleDashboard } from '../../contexts/DashboardContext';
 import {
   scanUninstallLeftovers,
@@ -24,15 +28,14 @@ import {
 } from '../../api/commands';
 import { formatSize } from '../../utils/format';
 import { shouldSkipInactivePageRender, type ModuleRenderProps } from './moduleProps';
+import { useOneClickScanListener } from '../../hooks/useOneClickScanListener';
 
 // ============================================================================
 // 组件实现
 // ============================================================================
 
 export function LeftoversModule({ layoutMode = 'cards', isPageActive = true }: ModuleRenderProps) {
-  const { moduleState, expandedModule, setExpandedModule, updateModuleState, triggerHealthRefresh, oneClickScanTrigger } = useModuleDashboard('leftovers');
-
-  const lastScanTriggerRef = useRef(0);
+  const { moduleState, expandedModule, setExpandedModule, updateModuleState, triggerHealthRefresh } = useModuleDashboard('leftovers');
 
   // 本地状态
   const [scanResult, setScanResult] = useState<LeftoverScanResult | null>(null);
@@ -48,22 +51,6 @@ export function LeftoversModule({ layoutMode = 'cards', isPageActive = true }: M
   const [showDeepCleanConfirm, setShowDeepCleanConfirm] = useState(false); // 深度清理确认
   const [deepCleanResult, setDeepCleanResult] = useState<PermanentDeleteResult | null>(null); // 深度清理结果
   const [showDeepCleanResult, setShowDeepCleanResult] = useState(false); // 显示深度清理结果
-
-  // 动画状态 - 删除进度遮罩
-  const [isDeletingVisible, setIsDeletingVisible] = useState(false);
-  const [isDeletingAnimating, setIsDeletingAnimating] = useState(false);
-  const deletingEnteredRef = useRef(false);
-  if (isDeletingVisible) deletingEnteredRef.current = true;
-  useEffect(() => {
-    if (isDeleting) {
-      setIsDeletingAnimating(true);
-      setIsDeletingVisible(true);
-    } else {
-      setIsDeletingVisible(false);
-      const timer = setTimeout(() => setIsDeletingAnimating(false), 200);
-      return () => clearTimeout(timer);
-    }
-  }, [isDeleting]);
 
   // 动画状态 - 深度清理警告弹窗
   const [isWarningVisible, setIsWarningVisible] = useState(false);
@@ -134,13 +121,7 @@ export function LeftoversModule({ layoutMode = 'cards', isPageActive = true }: M
     }
   }, [updateModuleState, setExpandedModule]);
 
-  // 监听一键扫描触发器
-  useEffect(() => {
-    if (oneClickScanTrigger > 0 && oneClickScanTrigger !== lastScanTriggerRef.current) {
-      lastScanTriggerRef.current = oneClickScanTrigger;
-      handleScan();
-    }
-  }, [oneClickScanTrigger, handleScan]);
+  useOneClickScanListener('leftovers', handleScan);
 
   // 执行删除
   const handleDelete = useCallback(async () => {
@@ -399,34 +380,18 @@ export function LeftoversModule({ layoutMode = 'cards', isPageActive = true }: M
 
   const isExpanded = expandedModule === 'leftovers';
 
-  if (shouldSkipInactivePageRender(layoutMode, isPageActive) && !isDeletingAnimating) {
+  if (shouldSkipInactivePageRender(layoutMode, isPageActive) && !isDeleting && !showDeleteConfirm) {
     return null;
   }
 
   return (
     <>
-      {/* 删除进度遮罩 - 使用 Portal 渲染到 body 确保覆盖全屏 */}
-      {isDeletingAnimating && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-          <div className={`absolute inset-0 bg-black/50 backdrop-blur-sm ${isDeletingVisible ? 'modal-overlay-in' : deletingEnteredRef.current ? 'modal-overlay-out' : 'opacity-0'}`} />
-          <div className={`relative bg-[var(--bg-card)] rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 max-w-sm mx-4 ${isDeletingVisible ? 'modal-content-in' : deletingEnteredRef.current ? 'modal-content-out' : 'opacity-0'}`}>
-            <div className="w-16 h-16 rounded-full bg-[var(--color-warning)]/10 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 text-[var(--color-warning)] animate-spin" />
-            </div>
-            <div className="text-center">
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]">正在清理卸载残留</h3>
-              <p className="text-sm text-[var(--text-muted)] mt-1">
-                正在删除 {selectedPaths.size} 个文件夹，请稍候...
-              </p>
-            </div>
-            <div className="w-full h-2 bg-[var(--bg-hover)] rounded-full overflow-hidden">
-              <div className="h-full bg-[var(--color-warning)] rounded-full animate-pulse" style={{ width: '100%' }} />
-            </div>
-            <p className="text-xs text-[var(--text-faint)]">请勿关闭窗口</p>
-          </div>
-        </div>,
-        document.body
-      )}
+      <OperationProgressOverlay
+        isOpen={isDeleting}
+        title="正在清理卸载残留"
+        description={`正在删除 ${selectedPaths.size.toLocaleString()} 个文件夹，请稍候…`}
+        tone="warning"
+      />
 
       <ModuleCard
         variant={layoutMode === 'pages' ? 'page' : 'card'}
@@ -444,60 +409,23 @@ export function LeftoversModule({ layoutMode = 'cards', isPageActive = true }: M
         error={moduleState.error}
       >
         {moduleState.status === 'idle' && !scanResult && (
-          <div className="p-5">
+          <ModulePageContent layoutMode={layoutMode} centerIdle>
             <EmptyState
+              page={layoutMode === 'pages'}
               icon={Package}
               title="尚未扫描卸载残留"
-              description="点击开始扫描，检索 AppData、ProgramData 等位置中可能遗留的软件目录。"
+              description="检索 AppData、ProgramData 等位置中可能遗留的软件目录。"
+              action={<EmptyScanAction onClick={handleScan} />}
             />
-          </div>
+          </ModulePageContent>
         )}
 
         {moduleState.status === 'scanning' && !scanResult && (
-          <div className="p-5">
-            {/* 页面模式下扫描耗时会更明显，这里补充过程状态，避免内容区长时间空白。 */}
-            <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)]/80 p-5 shadow-sm">
-              <div className="flex flex-col items-center text-center">
-                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand-green)]/10">
-                  <Loader2 className="h-7 w-7 animate-spin text-[var(--brand-green)]" />
-                </div>
-                <p className="text-sm font-semibold text-[var(--text-primary)]">正在扫描卸载残留...</p>
-                <p className="mt-1 max-w-xl text-xs leading-relaxed text-[var(--text-muted)]">
-                  正在检索 AppData、ProgramData、LocalLow 等常见残留位置，并结合安装记录、目录特征和置信度模型识别可疑目录。
-                </p>
-              </div>
-
-              {/* <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {[
-                  { label: '多路径检索', detail: '覆盖用户与公共数据目录', icon: FolderOpen },
-                  { label: '安装记录匹配', detail: '排除仍在使用的软件', icon: Package },
-                  { label: '置信度评分', detail: '优先识别高可信残留', icon: CheckCircle2 },
-                  { label: '特殊目录识别', detail: '标记模拟器与虚拟磁盘', icon: HardDrive },
-                ].map((step) => {
-                  const StepIcon = step.icon;
-                  return (
-                    <div
-                      key={step.label}
-                      className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-main)]/70 p-3"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--brand-green)]/10">
-                          <StepIcon className="h-4 w-4 text-[var(--brand-green)]" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold text-[var(--text-primary)]">{step.label}</p>
-                          <p className="truncate text-[11px] text-[var(--text-muted)]">{step.detail}</p>
-                        </div>
-                      </div>
-                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--bg-hover)]">
-                        <div className="h-full w-2/3 animate-pulse rounded-full bg-[var(--brand-green)]/70" />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div> */}
-            </div>
-          </div>
+          <ModuleScanPanel
+            icon={Package}
+            title="正在扫描卸载残留"
+            description="正在检索 AppData、ProgramData、LocalLow 等常见残留位置，并结合安装记录、目录特征和置信度模型识别可疑目录。"
+          />
         )}
 
         {/* 扫描结果内容 */}

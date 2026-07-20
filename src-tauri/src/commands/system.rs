@@ -3,7 +3,9 @@
 // ============================================================================
 
 use log::info;
-use tauri::Window;
+use tauri::{AppHandle, Window};
+
+pub use crate::admin_elevation::AdminElevationResult;
 
 // 重新导出供前端使用
 pub use crate::health_score::HealthScoreResult;
@@ -18,6 +20,18 @@ pub use crate::system_slim::SystemSlimStatus;
 #[tauri::command]
 pub fn check_admin_privilege() -> bool {
     crate::system_slim::check_admin()
+}
+
+/// 通过 UAC 以管理员身份重启当前程序；成功后退出当前非管理员实例。
+#[tauri::command]
+pub async fn request_admin_elevation_restart(app: AppHandle) -> Result<AdminElevationResult, String> {
+    let result = crate::admin_elevation::restart_as_admin()?;
+    if result.launched {
+        // 给 UAC 弹窗留出展示时间，再关闭当前实例，避免双开窗口。
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        app.exit(0);
+    }
+    Ok(result)
 }
 
 /// 获取系统瘦身状态（异步：避免 DISM 阻塞主线程）

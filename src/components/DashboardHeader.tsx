@@ -3,10 +3,11 @@
 // 显示 C 盘健康评分、磁盘使用情况和一键扫描按钮
 // ============================================================================
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, type ComponentType } from 'react';
 import { HardDrive, Moon, Trash2, Zap, Square } from 'lucide-react';
+import type { AppModuleId } from '../config/moduleMeta';
 import { useDashboardActions, useDashboardSummary } from '../contexts/DashboardContext';
-import { formatSize } from '../utils/format';
+import { DashboardDriveStrip } from './DashboardDriveStrip';
 
 // ============================================================================
 // 数字跳动动画 Hook
@@ -29,11 +30,11 @@ function useAnimatedNumber(targetValue: number, duration: number = 800) {
 
       const elapsed = currentTime - startTimeRef.current;
       const progress = Math.min(elapsed / duration, 1);
-      
+
       // 使用 easeOutExpo 缓动函数
       const easeProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
       const currentValue = Math.round(startValueRef.current + (targetValue - startValueRef.current) * easeProgress);
-      
+
       setDisplayValue(currentValue);
 
       if (progress < 1) {
@@ -57,30 +58,91 @@ function useAnimatedNumber(targetValue: number, duration: number = 800) {
 // 根据分数获取颜色配置
 // ============================================================================
 
-// 微信风格评分颜色配置
-function getScoreColor(score: number) {
+interface ScoreColorConfig {
+  text: string;
+  stroke: string;
+  ringGlow: string;
+  badgeBg: string;
+  badgeText: string;
+  badgeBorder: string;
+  bar: string;
+  label: string;
+}
+
+function getScoreColor(score: number): ScoreColorConfig {
   if (score >= 80) {
     return {
-      text: 'text-[#07C160]',      // 微信绿
-      bg: 'bg-[#07C160]',
-      bgLight: 'bg-[#07C160]/10',
+      text: 'text-[var(--color-success)]',
+      stroke: 'stroke-[var(--color-success)]',
+      ringGlow: 'shadow-[inset_0_0_0_1px_rgba(5,150,105,0.12)]',
+      badgeBg: 'bg-[var(--color-success)]/10',
+      badgeText: 'text-[var(--color-success)]',
+      badgeBorder: 'border-[var(--color-success)]/25',
+      bar: 'bg-[var(--color-success)]',
       label: '优秀',
     };
-  } else if (score >= 60) {
+  }
+  if (score >= 60) {
     return {
-      text: 'text-[#FA9D3B]',      // 柔和橙
-      bg: 'bg-[#FA9D3B]',
-      bgLight: 'bg-[#FA9D3B]/10',
+      text: 'text-[var(--color-warning)]',
+      stroke: 'stroke-[var(--color-warning)]',
+      ringGlow: 'shadow-[inset_0_0_0_1px_rgba(217,119,6,0.12)]',
+      badgeBg: 'bg-[var(--color-warning)]/10',
+      badgeText: 'text-[var(--color-warning)]',
+      badgeBorder: 'border-[var(--color-warning)]/25',
+      bar: 'bg-[var(--color-warning)]',
       label: '良好',
     };
-  } else {
-    return {
-      text: 'text-[#FA5151]',      // 柔和红
-      bg: 'bg-[#FA5151]',
-      bgLight: 'bg-[#FA5151]/10',
-      label: '需优化',
-    };
   }
+  return {
+    text: 'text-[var(--color-danger)]',
+    stroke: 'stroke-[var(--color-danger)]',
+    ringGlow: 'shadow-[inset_0_0_0_1px_rgba(220,38,38,0.12)]',
+    badgeBg: 'bg-[var(--color-danger)]/10',
+    badgeText: 'text-[var(--color-danger)]',
+    badgeBorder: 'border-[var(--color-danger)]/25',
+    bar: 'bg-[var(--color-danger)]',
+    label: '需优化',
+  };
+}
+
+// ============================================================================
+// 健康评分子项
+// ============================================================================
+
+interface HealthMetricProps {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: number;
+  max: number;
+  barClass: string;
+  title: string;
+}
+
+function HealthMetric({ icon: Icon, label, value, max, barClass, title }: HealthMetricProps) {
+  const ratio = max > 0 ? Math.min(value / max, 1) : 0;
+
+  return (
+    <div
+      title={title}
+      className="min-w-0 flex-1 rounded-[10px] border border-[var(--border-muted)] bg-[var(--bg-hover)]/70 px-2.5 py-2 cursor-help"
+    >
+      <div className="flex items-center gap-1 text-[10px] text-[var(--text-faint)]">
+        <Icon className="h-3 w-3 shrink-0" />
+        <span className="truncate">{label}</span>
+      </div>
+      <div className="mt-1 flex items-baseline gap-0.5">
+        <span className="text-[13px] font-semibold tabular-nums text-[var(--text-primary)]">{value}</span>
+        <span className="text-[10px] tabular-nums text-[var(--text-faint)]">/{max}</span>
+      </div>
+      <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[var(--border-muted)]">
+        <div
+          className={`h-full rounded-full transition-[width] duration-500 ease-out ${barClass}`}
+          style={{ width: `${ratio * 100}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 // ============================================================================
@@ -94,17 +156,23 @@ interface DashboardHeaderProps {
   onShowWelcome?: () => void;
   /** 页面模式聚焦单模块，隐藏一键扫描可以避免用户误以为只扫描当前页。 */
   hideOneClickScan?: boolean;
+  /** 存储洞察条跳转模块（卡片模式滚动 / 页面模式切换） */
+  onNavigateModule?: (moduleId: AppModuleId) => void;
 }
 
 // ============================================================================
 // 组件实现
 // ============================================================================
 
-export function DashboardHeader({ onOneClickScan, onShowWelcome, hideOneClickScan = false }: DashboardHeaderProps) {
-  const { diskInfo, healthData, isLoadingHealth, isAnyScanning } = useDashboardSummary();
+export function DashboardHeader({
+  onOneClickScan,
+  onShowWelcome,
+  hideOneClickScan = false,
+  onNavigateModule,
+}: DashboardHeaderProps) {
+  const { localDrives, healthData, isLoadingHealth, isLoadingDrives, isAnyScanning } = useDashboardSummary();
   const { stopAllScans } = useDashboardActions();
-  
-  // 动画数字
+
   const animatedScore = useAnimatedNumber(healthData?.score ?? 0);
   const scoreColor = getScoreColor(healthData?.score ?? 0);
 
@@ -113,12 +181,12 @@ export function DashboardHeader({ onOneClickScan, onShowWelcome, hideOneClickSca
   const clickTimerRef = useRef<number | null>(null);
 
   const handleTripleClick = () => {
-    setClickCount(prev => prev + 1);
-    
+    setClickCount((prev) => prev + 1);
+
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current);
     }
-    
+
     clickTimerRef.current = window.setTimeout(() => {
       setClickCount(0);
     }, 500);
@@ -130,113 +198,107 @@ export function DashboardHeader({ onOneClickScan, onShowWelcome, hideOneClickSca
   };
 
   return (
-    <div className="bg-[var(--bg-card)] border-b border-[var(--border-color)] px-5 py-2.5 sticky top-0 z-10">
-      <div className="max-w-5xl mx-auto flex items-center gap-5">
-        {/* 健康评分 - 微信风格圆环进度 */}
-        <div 
-          className="flex items-center gap-3 cursor-pointer min-w-[230px]"
+    <div className="glass-panel sticky top-0 z-20 border-b border-[var(--border-color)] px-5 py-3.5">
+      <div className="mx-auto dashboard-shell-width flex items-stretch gap-4">
+        {/* 健康评分：独立卡片，避免与磁盘条挤在同一视觉层 */}
+        <div
+          className="dashboard-health-panel shrink-0 cursor-pointer rounded-[var(--radius-lg)] border border-[var(--border-muted)] bg-[var(--bg-glass-strong)] px-3.5 py-3 backdrop-blur-md"
           onClick={handleTripleClick}
         >
-          <div className={`relative w-12 h-12 rounded-full ${scoreColor.bgLight} flex items-center justify-center shrink-0`}>
-            <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="5" className="text-[var(--border-color)]" />
-              <circle
-                cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round"
-                className={scoreColor.text}
-                strokeDasharray={`${(healthData?.score ?? 0) * 2.64} 264`}
-                style={{ transition: 'stroke-dasharray 0.8s ease-out' }}
-              />
-            </svg>
-            <span className={`text-base font-bold ${scoreColor.text} tabular-nums`}>
-              {isLoadingHealth ? '--' : animatedScore}
-            </span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[14px] font-bold text-[var(--text-primary)]">健康评分</span>
-              {healthData && (
-                <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${scoreColor.bg} text-white`}>
-                  {scoreColor.label}
-                </span>
+          <div className="flex items-start gap-3.5">
+            {/* 评分环：略放大并加柔光，主视觉更聚焦 */}
+            <div
+              className={`relative flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full bg-[var(--bg-hover)] ${scoreColor.ringGlow}`}
+            >
+              <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="42" fill="none" strokeWidth="4" className="stroke-[var(--border-muted)]" />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="42"
+                  fill="none"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  className={scoreColor.stroke}
+                  strokeDasharray={`${(healthData?.score ?? 0) * 2.64} 264`}
+                  style={{ transition: 'stroke-dasharray 640ms cubic-bezier(0.23, 1, 0.32, 1)' }}
+                />
+              </svg>
+              <span className={`text-lg font-bold tabular-nums leading-none ${scoreColor.text}`}>
+                {isLoadingHealth ? '--' : animatedScore}
+              </span>
+            </div>
+
+            <div className="min-w-[248px]">
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-semibold tracking-tight text-[var(--text-primary)]">健康评分</span>
+                {healthData && (
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${scoreColor.badgeBg} ${scoreColor.badgeText} ${scoreColor.badgeBorder}`}
+                  >
+                    {scoreColor.label}
+                  </span>
+                )}
+              </div>
+
+              {healthData ? (
+                <div className="mt-2.5 flex gap-2">
+                  <HealthMetric
+                    icon={HardDrive}
+                    label="磁盘"
+                    value={healthData.disk_score}
+                    max={40}
+                    barClass={scoreColor.bar}
+                    title="磁盘空间评分（满分40）&#10;• 可用空间 ≥30%：40分&#10;• 可用空间 20-30%：30分&#10;• 可用空间 10-20%：20分&#10;• 可用空间 <10%：10分"
+                  />
+                  <HealthMetric
+                    icon={Moon}
+                    label="休眠"
+                    value={healthData.hibernation_score}
+                    max={30}
+                    barClass={scoreColor.bar}
+                    title="休眠文件评分（满分30）&#10;• 已关闭休眠：30分&#10;• 休眠文件存在：0分&#10;休眠文件通常占用 8-32GB 空间"
+                  />
+                  <HealthMetric
+                    icon={Trash2}
+                    label="垃圾"
+                    value={healthData.junk_score}
+                    max={30}
+                    barClass={scoreColor.bar}
+                    title="垃圾文件评分（满分30）&#10;• 垃圾 <500MB：30分&#10;• 垃圾 500MB-2GB：20分&#10;• 垃圾 2-5GB：10分&#10;• 垃圾 >5GB：0分"
+                  />
+                </div>
+              ) : (
+                <p className="mt-2 text-[11px] text-[var(--text-faint)]">正在计算健康评分…</p>
               )}
             </div>
-            {healthData && (
-              <div className="flex items-center gap-3 mt-1 text-[11px] text-[var(--text-muted)] tabular-nums">
-                <span 
-                  className="flex items-center gap-1 cursor-help"
-                  title="磁盘空间评分（满分40）&#10;• 可用空间 ≥30%：40分&#10;• 可用空间 20-30%：30分&#10;• 可用空间 10-20%：20分&#10;• 可用空间 <10%：10分"
-                >
-                  <HardDrive className="w-3.5 h-3.5" />
-                  {healthData.disk_score}/40
-                </span>
-                <span 
-                  className="flex items-center gap-1 cursor-help"
-                  title="休眠文件评分（满分30）&#10;• 已关闭休眠：30分&#10;• 休眠文件存在：0分&#10;休眠文件通常占用 8-32GB 空间"
-                >
-                  <Moon className="w-3.5 h-3.5" />
-                  {healthData.hibernation_score}/30
-                </span>
-                <span 
-                  className="flex items-center gap-1 cursor-help"
-                  title="垃圾文件评分（满分30）&#10;• 垃圾 <500MB：30分&#10;• 垃圾 500MB-2GB：20分&#10;• 垃圾 2-5GB：10分&#10;• 垃圾 >5GB：0分"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  {healthData.junk_score}/30
-                </span>
-              </div>
-            )}
           </div>
         </div>
 
-        {/* 分隔线 */}
-        <div className="w-px h-9 bg-[var(--border-color)]" />
-
-        {/* 磁盘使用情况 */}
-        <div className="flex-1">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[14px] font-bold text-[var(--text-primary)]">C 盘空间</span>
-            {diskInfo && (
-              <span className="text-[12px] text-[var(--text-muted)] tabular-nums">
-                {formatSize(diskInfo.free_space)} 可用 / {formatSize(diskInfo.total_space)}
-              </span>
-            )}
-          </div>
-          {/* 进度条 - 使用柔和灰色轨道 */}
-          <div className="h-2 bg-[var(--bg-hover)] rounded-full overflow-hidden">
-            {diskInfo && (
-              <div 
-                className={`h-full rounded-full transition-all duration-500 ${
-                  diskInfo.usage_percent > 90 ? 'bg-[var(--color-danger)]' :
-                  diskInfo.usage_percent > 75 ? 'bg-[var(--color-warning)]' : 'bg-[var(--brand-green)]'
-                }`}
-                style={{ width: `${diskInfo.usage_percent}%` }}
-              />
-            )}
-          </div>
-        </div>
+        {/* 全部分区：固定盘 + U 盘，横向滚动卡片 */}
+        <DashboardDriveStrip
+          drives={localDrives}
+          loading={isLoadingDrives}
+          onNavigateModule={onNavigateModule}
+        />
 
         {!hideOneClickScan && (
           <>
-            {/* 分隔线 */}
-            <div className="w-px h-9 bg-[var(--border-color)]" />
+            <div className="my-1 w-px shrink-0 bg-[var(--border-color)]" />
 
-            {/* 一键扫描按钮区域 */}
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center">
               {isAnyScanning ? (
                 <button
                   onClick={stopAllScans}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-semibold transition-all duration-200 bg-[var(--color-danger)]/20 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/30"
+                  className="flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-danger)]/12 px-4 py-2.5 text-[13px] font-semibold text-[var(--color-danger)] transition-transform duration-100 hover:bg-[var(--color-danger)]/18 active:scale-[0.97]"
                   title="停止扫描"
                 >
-                  <Square className="w-4 h-4" />
+                  <Square className="h-4 w-4" />
                   停止扫描
                 </button>
               ) : (
-                <button
-                  onClick={onOneClickScan}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-semibold transition-all duration-200 bg-[var(--brand-green)] text-white hover:bg-[var(--brand-green-hover)] active:scale-[0.98]"
-                >
-                  <Zap className="w-4 h-4" />
+                <button onClick={onOneClickScan} className="btn-primary">
+                  <Zap className="h-4 w-4" />
                   一键扫描
                 </button>
               )}

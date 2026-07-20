@@ -1,4 +1,4 @@
-﻿// ============================================================================
+// ============================================================================
 // Tauri 鍛戒护璋冪敤灏佽
 // 灏佽鎵€鏈変笌Rust鍚庣鐨勯€氫俊鎺ュ彛
 // ============================================================================
@@ -14,6 +14,7 @@ import type {
   DeleteRequest,
   LargeFileEntry,
 } from '../types';
+import { readMigratedStorageItem } from '../utils/storageMigration';
 
 export type DistributionChannel = 'installer' | 'portable';
 export type VerifyIntegrityStatus =
@@ -57,13 +58,13 @@ export async function getStorageLocationInfo(): Promise<StorageLocationInfo> {
   return invoke<StorageLocationInfo>('get_storage_location_info');
 }
 
-/** 重试旧版便携数据迁移，后端只复制 LightC 自有数据且保留源文件。 */
+/** 重试旧版便携数据迁移，后端只复制 LuoScope 自有数据且保留源文件。 */
 export async function migrateLegacyPortableData(): Promise<StorageLocationInfo> {
   return invoke<StorageLocationInfo>('migrate_legacy_portable_data');
 }
 
 /**
- * 校验当前 LightC.exe 是否能通过官方 minisign 签名验证。
+ * 校验当前 LuoScope.exe 是否能通过官方 minisign 签名验证。
  * 网络失败由后端转换为 network_error，便于前端给出不同于篡改风险的提示。
  */
 export async function verifyIntegrity(): Promise<VerifyIntegrityResult> {
@@ -98,9 +99,11 @@ export interface LocalDriveInfo {
   is_system: boolean;
   /** MFT 扫描当前仅支持 NTFS */
   is_ntfs: boolean;
+  /** 是否为可移动存储（U 盘） */
+  is_removable: boolean;
 }
 
-/** 获取本机固定磁盘分区列表。 */
+/** 获取本机分区列表（固定磁盘 + 可移动 U 盘）。 */
 export async function getLocalDrives(): Promise<LocalDriveInfo[]> {
   return invoke<LocalDriveInfo[]>('get_local_drives');
 }
@@ -238,9 +241,25 @@ export interface SystemSlimStatus {
 }
 
 /**
- * 妫€鏌ユ槸鍚︿互绠＄悊鍛樻潈闄愯繍琛? */
+ * 检查是否以管理员权限运行
+ */
 export async function checkAdminPrivilege(): Promise<boolean> {
   return invoke<boolean>('check_admin_privilege');
+}
+
+/** 管理员提权重启结果 */
+export interface AdminElevationResult {
+  already_elevated: boolean;
+  launched: boolean;
+  message: string;
+}
+
+/**
+ * 通过 UAC 以管理员身份重启当前程序。
+ * Windows 不允许静默提权；用户需在 UAC 弹窗中确认一次。
+ */
+export async function requestAdminElevationRestart(): Promise<AdminElevationResult> {
+  return invoke<AdminElevationResult>('request_admin_elevation_restart');
 }
 
 /**
@@ -355,6 +374,61 @@ export async function restoreAllDriverBackups(): Promise<DriverRestoreResult> {
 /** 打开当前数据目录下的独立驱动备份目录。 */
 export async function openDriverBackupDir(): Promise<void> {
   return invoke<void>('open_driver_backup_dir');
+}
+
+// ============================================================================
+// 垃圾软件清理
+// ============================================================================
+
+export interface BloatwareItem {
+  id: string;
+  display_name: string;
+  publisher: string;
+  install_location: string | null;
+  uninstall_command: string;
+  silent_uninstall_command: string | null;
+  estimated_size_mb: number | null;
+  signature_id: string;
+  signature_label: string;
+  match_reason: string;
+}
+
+export interface BloatwareScanResult {
+  items: BloatwareItem[];
+  total_count: number;
+  scan_duration_ms: number;
+  is_admin: boolean;
+}
+
+export interface BloatwareUninstallRequestItem {
+  id: string;
+  display_name: string;
+  uninstall_command: string;
+  silent_uninstall_command?: string | null;
+}
+
+export interface BloatwareUninstallItemResult {
+  display_name: string;
+  success: boolean;
+  message: string;
+}
+
+export interface BloatwareUninstallResult {
+  results: BloatwareUninstallItemResult[];
+  success_count: number;
+  failed_count: number;
+}
+
+/** 扫描注册表中匹配的常见垃圾/捆绑软件 */
+export async function scanBloatware(): Promise<BloatwareScanResult> {
+  return invoke<BloatwareScanResult>('scan_bloatware');
+}
+
+/** 依次调用官方卸载程序卸载选中软件 */
+export async function uninstallBloatware(
+  items: BloatwareUninstallRequestItem[],
+): Promise<BloatwareUninstallResult> {
+  return invoke<BloatwareUninstallResult>('uninstall_bloatware', { items });
 }
 
 // ============================================================================
@@ -875,7 +949,8 @@ export interface CleanupHistorySummary {
   total_freed_bytes: number;
 }
 
-const APP_SETTINGS_STORAGE_KEY = 'c-cleanup-settings';
+const APP_SETTINGS_STORAGE_KEY = 'luoscope-settings';
+const LEGACY_APP_SETTINGS_KEYS = ['c-cleanup-settings'];
 const DEFAULT_CLEANUP_LOG_RETENTION = 10;
 
 function getCleanupLogRetentionSetting(): number {
@@ -884,7 +959,7 @@ function getCleanupLogRetentionSetting(): number {
   }
 
   try {
-    const raw = window.localStorage.getItem(APP_SETTINGS_STORAGE_KEY);
+    const raw = readMigratedStorageItem(APP_SETTINGS_STORAGE_KEY, LEGACY_APP_SETTINGS_KEYS);
     if (!raw) return DEFAULT_CLEANUP_LOG_RETENTION;
     const parsed = JSON.parse(raw) as { cleanupLogRetention?: unknown };
     const count = Math.floor(Number(parsed.cleanupLogRetention) || DEFAULT_CLEANUP_LOG_RETENTION);

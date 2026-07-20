@@ -4,6 +4,7 @@
 // ============================================================================
 
 // 模块声明
+mod admin_elevation;
 mod ai_models;
 mod cleaner;
 mod commands;
@@ -49,11 +50,10 @@ pub fn run() {
     // 初始化日志
     env_logger::init();
 
-    // 便携版必须在 Tauri 自动创建窗口前指定 WebView2 绝对数据目录，
-    // 否则 localStorage 会继续落到 AppData，便携包移动后设置不会跟随。
-    let portable_webview_data_directory = runtime::prepare_portable_webview_data_directory();
+    // 所有发行模式都在 setup 中显式指定 WebView2 数据目录，避免提权后默认 UDF 不可写。
+    let webview_data_directory = runtime::prepare_webview_data_directory();
     let mut context = tauri::generate_context!();
-    if portable_webview_data_directory.is_some() {
+    if webview_data_directory.is_some() {
         for window_config in &mut context.config_mut().app.windows {
             window_config.create = false;
         }
@@ -65,7 +65,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(move |app| {
-            if let Some(webview_data_directory) = portable_webview_data_directory.clone() {
+            if let Some(webview_data_directory) = webview_data_directory.clone() {
                 let window_configs = app.config().app.windows.clone();
                 for window_config in window_configs {
                     tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
@@ -99,6 +99,7 @@ pub fn run() {
             open_recycle_bin,
             // 系统瘦身
             check_admin_privilege,
+            request_admin_elevation_restart,
             get_system_slim_status,
             disable_hibernation,
             enable_hibernation,
@@ -112,6 +113,9 @@ pub fn run() {
             open_driver_backup_dir,
             // 健康评分
             get_health_score,
+            // 垃圾软件清理
+            scan_bloatware,
+            uninstall_bloatware,
             // 卸载残留和注册表清理
             scan_uninstall_leftovers,
             delete_leftover_folders,

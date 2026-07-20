@@ -14,6 +14,16 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new()
 Never retry because of garbled console output.
 If output contains unreadable characters, inspect the exit code first.
 
+## 开发缓存（Windows）
+
+本项目开发/编译缓存统一在 **D 盘**：
+
+- 根目录：`D:\DevCache\LuoScope\`
+- 含：`cargo-target`（编译产物）、`cargo-home`（Rust 依赖）、`npm-cache`、`temp`（链接临时文件）、`cursor-sandbox-cache`（Cursor Agent 沙盒，经目录联接重定向）
+- 运行 `npm run dev` / `npm run tauri dev` / `pack.ps1` 前会自动执行 `scripts/set-dev-cache-env.ps1`
+- **首次或 C 盘再次被占满时**：在项目根目录执行 `.\scripts\setup-d-drive-cache.ps1`（迁移 `~\.cargo`、`npm-cache`，并为 `cursor-sandbox-cache` 建立 C→D 目录联接 + 写入用户环境变量）
+- 若联接未生效，可手动删除 `%LOCALAPPDATA%\Temp\cursor-sandbox-cache` 后重新运行上述脚本
+
 ## 1. 基本原则
 
 - 只做用户明确要求的事情，不主动扩展需求

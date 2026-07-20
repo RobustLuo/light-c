@@ -3,8 +3,11 @@
 // 支持 success/error/warning/info 四种类型
 // ============================================================================
 
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, ReactNode, useRef } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react';
+
+/** 退场动画时长，需与 App.css 中 --toast-motion-exit 对齐 */
+const TOAST_EXIT_DURATION_MS = 280;
 
 // ============================================================================
 // 类型定义
@@ -50,30 +53,42 @@ interface ToastProviderProps {
 
 export function ToastProvider({ children }: ToastProviderProps) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const dismissingRef = useRef<Set<string>>(new Set());
+  const [, forceRender] = useState(0);
+
+  const hideToast = useCallback((id: string) => {
+    if (dismissingRef.current.has(id)) {
+      return;
+    }
+
+    dismissingRef.current.add(id);
+    forceRender((value) => value + 1);
+
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+      dismissingRef.current.delete(id);
+      forceRender((value) => value + 1);
+    }, TOAST_EXIT_DURATION_MS);
+  }, []);
 
   const showToast = useCallback((toast: Omit<ToastItem, 'id'>) => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const newToast: ToastItem = { ...toast, id };
-    
+
     setToasts((prev) => [...prev, newToast]);
 
-    // 自动消失
     const duration = toast.duration ?? 4000;
     if (duration > 0) {
-      setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
+      window.setTimeout(() => {
+        hideToast(id);
       }, duration);
     }
-  }, []);
-
-  const hideToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
+  }, [hideToast]);
 
   return (
     <ToastContext.Provider value={{ toasts, showToast, hideToast }}>
       {children}
-      <ToastContainer toasts={toasts} onClose={hideToast} />
+      <ToastContainer toasts={toasts} onClose={hideToast} dismissingIds={dismissingRef.current} />
     </ToastContext.Provider>
   );
 }
@@ -85,15 +100,21 @@ export function ToastProvider({ children }: ToastProviderProps) {
 interface ToastContainerProps {
   toasts: ToastItem[];
   onClose: (id: string) => void;
+  dismissingIds: Set<string>;
 }
 
-function ToastContainer({ toasts, onClose }: ToastContainerProps) {
+function ToastContainer({ toasts, onClose, dismissingIds }: ToastContainerProps) {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-20 right-6 z-[10000] flex flex-col gap-2 max-w-sm">
+    <div className="toast-stack fixed top-20 right-6 z-[10000] flex max-w-sm flex-col gap-2.5">
       {toasts.map((toast) => (
-        <ToastItemComponent key={toast.id} toast={toast} onClose={() => onClose(toast.id)} />
+        <ToastItemComponent
+          key={toast.id}
+          toast={toast}
+          isDismissing={dismissingIds.has(toast.id)}
+          onClose={() => onClose(toast.id)}
+        />
       ))}
     </div>
   );
@@ -105,6 +126,7 @@ function ToastContainer({ toasts, onClose }: ToastContainerProps) {
 
 interface ToastItemComponentProps {
   toast: ToastItem;
+  isDismissing: boolean;
   onClose: () => void;
 }
 
@@ -138,17 +160,17 @@ const colorMap = {
   },
 };
 
-function ToastItemComponent({ toast, onClose }: ToastItemComponentProps) {
+function ToastItemComponent({ toast, isDismissing, onClose }: ToastItemComponentProps) {
   const Icon = iconMap[toast.type];
   const colors = colorMap[toast.type];
 
   return (
     <div
       className={`
+        toast-item
         ${colors.bg} ${colors.border}
-        border rounded-xl p-4 shadow-lg backdrop-blur-sm
-        animate-in slide-in-from-right-5 fade-in duration-300
-        flex items-start gap-3
+        glass-panel-strong flex items-start gap-3 rounded-[var(--radius-lg)] border p-4 shadow-[var(--shadow-md)]
+        ${isDismissing ? 'toast-item-out' : 'toast-item-in'}
       `}
     >
       <Icon className={`w-5 h-5 ${colors.icon} shrink-0 mt-0.5`} />

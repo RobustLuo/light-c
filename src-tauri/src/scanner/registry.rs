@@ -193,7 +193,7 @@ impl RegistryBackup {
         fs::create_dir_all(backup_dir).map_err(|e| format!("创建备份目录失败: {}", e))?;
 
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let backup_file = backup_dir.join(format!("lightc_registry_backup_{}.reg", timestamp));
+        let backup_file = backup_dir.join(format!("luoscope_registry_backup_{}.reg", timestamp));
 
         let mut file =
             File::create(&backup_file).map_err(|e| format!("创建备份文件失败: {}", e))?;
@@ -204,7 +204,7 @@ impl RegistryBackup {
         writeln!(file).map_err(|e| format!("写入备份文件失败: {}", e))?;
         writeln!(
             file,
-            "; LightC 注册表备份 — {}",
+            "; LuoScope 注册表备份 — {}",
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
         )
         .map_err(|e| format!("写入备份文件失败: {}", e))?;
@@ -226,7 +226,7 @@ impl RegistryBackup {
     /// 使用 reg.exe export 导出完整注册表键
     fn export_key_via_reg_exe(file: &mut File, entry: &RegistryEntry) -> Result<(), String> {
         let temp_dir = std::env::temp_dir();
-        let temp_file = temp_dir.join(format!("lightc_temp_export_{}.reg", std::process::id()));
+        let temp_file = temp_dir.join(format!("luoscope_temp_export_{}.reg", std::process::id()));
 
         let reg_subpath = Self::to_reg_exe_format(&entry.path)?;
 
@@ -292,7 +292,7 @@ impl RegistryBackup {
     pub fn get_backup_dir() -> PathBuf {
         dirs::document_dir()
             .unwrap_or_else(|| PathBuf::from("C:\\"))
-            .join("LightC")
+            .join("LuoScope")
             .join("RegistryBackups")
     }
 }

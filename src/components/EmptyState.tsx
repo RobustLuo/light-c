@@ -1,5 +1,5 @@
 // ============================================================================
-// 通用空数据占位组件
+// 通用空数据占位组件 — 毛玻璃占位，无弹跳/外圈干扰
 // ============================================================================
 
 import type { ComponentType, ReactNode } from 'react';
@@ -13,6 +13,8 @@ interface EmptyStateProps {
   action?: ReactNode;
   tone?: 'neutral' | 'success';
   compact?: boolean;
+  /** 页面模式扫描前引导：撑满内容区、弱化边框，与模块卡片融合 */
+  page?: boolean;
   className?: string;
 }
 
@@ -23,32 +25,35 @@ export function EmptyState({
   action,
   tone = 'neutral',
   compact = false,
+  page = false,
   className = '',
 }: EmptyStateProps) {
   const Icon = icon ?? (tone === 'success' ? CheckCircle2 : Sparkles);
-  const iconClassName = tone === 'success'
-    ? 'bg-[var(--brand-green-10)] text-[var(--brand-green)]'
-    : 'bg-[var(--brand-green-10)] text-[var(--brand-green)]';
 
   return (
     <div
-      className={`relative overflow-hidden flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border-color)] bg-[linear-gradient(135deg,var(--bg-main),var(--brand-green-10))] px-6 text-center ${
-        compact ? 'min-h-[160px] py-8' : 'min-h-[220px] py-14'
-      } ${className}`}
+      className={`empty-state empty-state--${tone} ${compact ? 'empty-state--compact' : ''} ${
+        page ? 'empty-state--page' : ''
+      } motion-enter ${className}`}
     >
-      {/* 用低对比度背景层增加空状态质感，避免纯灰色占位在页面模式下显得空。 */}
-      <div className="pointer-events-none absolute -left-10 -top-10 h-32 w-32 rounded-full bg-[var(--brand-green)]/5" />
-      <div className="pointer-events-none absolute -right-12 bottom-4 h-28 w-28 rounded-full bg-[var(--brand-green)]/5" />
-      <div className={`relative mb-3 flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm ${iconClassName}`}>
-        <Icon className="h-6 w-6" />
+      {/* 背景光斑：仅环境氛围，不做图标级动效 */}
+      <div className="empty-state__aurora" aria-hidden>
+        <span className="empty-state__orb empty-state__orb--1" />
+        <span className="empty-state__orb empty-state__orb--2" />
+        <span className="empty-state__orb empty-state__orb--3" />
       </div>
-      <p className="relative text-sm font-semibold text-[var(--text-primary)]">{title}</p>
-      {description && (
-        <p className="relative mt-1 max-w-sm text-xs leading-relaxed text-[var(--text-muted)]">
-          {description}
-        </p>
-      )}
-      {action && <div className="relative mt-4">{action}</div>}
+
+      <div className="empty-state__stage">
+        <div className="empty-state__icon-shell">
+          <div className="empty-state__icon">
+            <Icon className="empty-state__icon-svg" strokeWidth={1.75} />
+          </div>
+        </div>
+
+        <p className="empty-state__title">{title}</p>
+        {description && <p className="empty-state__desc">{description}</p>}
+        {action && <div className="empty-state__action">{action}</div>}
+      </div>
     </div>
   );
 }

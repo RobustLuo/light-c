@@ -5,11 +5,14 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Flame, Loader2, FolderOpen, Clock, HardDrive, ChevronDown, ChevronRight, Search, ShieldAlert, Shield, Eye, Trash2, XCircle } from 'lucide-react';
+import { Flame, FolderOpen, Clock, HardDrive, ChevronDown, ChevronRight, Search, ShieldAlert, Shield, Eye, Trash2 } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { ModuleCard } from '../ModuleCard';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { EmptyState } from '../EmptyState';
+import { EmptyScanAction } from '../EmptyScanAction';
+import { ModulePageContent } from '../ModulePageContent';
+import { ModuleScanPanel } from '../ModuleScanPanel';
 import {
   defaultDriveLetter,
   DriveSelect,
@@ -24,6 +27,7 @@ import { formatSize } from '../../utils/format';
 import { openSearchUrl } from '../../utils/searchEngine';
 import { DrillDownModal } from './DrillDownModal';
 import { shouldSkipInactivePageRender, type ModuleRenderProps } from './moduleProps';
+import { useOneClickScanListener } from '../../hooks/useOneClickScanListener';
 
 // ============================================================================
 // 工具函数
@@ -32,12 +36,12 @@ import { shouldSkipInactivePageRender, type ModuleRenderProps } from './modulePr
 /**
  * 格式化时间戳为 YYYY-MM-DD HH:mm
  */
-function formatDateTime(timestamp: number): string {
-  if (!timestamp) return '-';
+function formatDateTime(timestamp: number): string | null {
+  if (!timestamp) return null;
   // MFT 引擎返回 Unix 秒，常规遍历返回毫秒；这里做兼容，避免秒级时间戳被解析到 1970 年。
   const normalizedTimestamp = timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp;
   const date = new Date(normalizedTimestamp);
-  if (Number.isNaN(date.getTime())) return '-';
+  if (Number.isNaN(date.getTime())) return null;
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -150,31 +154,6 @@ function HotspotDiagnostics({
   );
 }
 
-/**
- * 获取父目录类型的显示颜色
- */
-function getParentTypeColor(type: string): string {
-  switch (type) {
-    case 'Local':
-      return 'text-blue-500 bg-blue-50 dark:bg-blue-900/20';
-    case 'Roaming':
-      return 'text-purple-500 bg-purple-50 dark:bg-purple-900/20';
-    case 'LocalLow':
-      return 'text-orange-500 bg-orange-50 dark:bg-orange-900/20';
-    case 'Windows':
-      return 'text-red-500 bg-red-50 dark:bg-red-900/20';
-    case 'Program Files':
-    case 'Program Files (x86)':
-      return 'text-amber-500 bg-amber-50 dark:bg-amber-900/20';
-    case 'Users':
-      return 'text-cyan-500 bg-cyan-50 dark:bg-cyan-900/20';
-    case 'System':
-      return 'text-rose-500 bg-rose-50 dark:bg-rose-900/20';
-    default:
-      return 'text-gray-500 bg-gray-50 dark:bg-gray-900/20';
-  }
-}
-
 // ============================================================================
 // 大目录分析条目组件
 // ============================================================================
@@ -183,211 +162,227 @@ interface HotspotItemProps {
   entry: HotspotEntry;
   rank: number;
   maxSize: number;
-  isFullScan: boolean; // 是否为深度扫描模式
+  isFullScan: boolean;
   onOpenFolder: (path: string) => void;
   onCleanup: (entry: HotspotEntry) => void;
   onSearch: (path: string) => void;
-  /** 父目录名称（用于路径简写展示） */
   parentName?: string;
-  /** 是否为子目录（下钻结果） */
   isChild?: boolean;
-  /** 当前在树中的绝对深度（0=顶级） */
   treeDepth?: number;
-  /** 下钻回调：点击后进入 drilldown 模式 */
   onDrillDown?: (path: string) => void;
+}
+
+function HotspotSummary({
+  folderCount,
+  totalSize,
+  durationMs,
+}: {
+  folderCount: number;
+  totalSize: number;
+  durationMs: number;
+}) {
+  return (
+    <div className="hotspot-summary-panel">
+      <div className="hotspot-summary-panel__aurora" aria-hidden>
+        <span className="hotspot-summary-panel__orb hotspot-summary-panel__orb--1" />
+        <span className="hotspot-summary-panel__orb hotspot-summary-panel__orb--2" />
+      </div>
+      <div className="hotspot-summary">
+        <div className="hotspot-summary__chip">
+          <span className="hotspot-summary__icon" aria-hidden>
+            <FolderOpen className="h-4 w-4" strokeWidth={1.75} />
+          </span>
+          <div className="hotspot-summary__copy">
+            <span className="hotspot-summary__value tabular-nums">{folderCount.toLocaleString()}</span>
+            <span className="hotspot-summary__label">扫描文件夹</span>
+          </div>
+        </div>
+        <div className="hotspot-summary__chip hotspot-summary__chip--accent">
+          <span className="hotspot-summary__icon hotspot-summary__icon--accent" aria-hidden>
+            <HardDrive className="h-4 w-4" strokeWidth={1.75} />
+          </span>
+          <div className="hotspot-summary__copy">
+            <span className="hotspot-summary__value tabular-nums">{formatSize(totalSize)}</span>
+            <span className="hotspot-summary__label">覆盖总大小</span>
+          </div>
+        </div>
+        <div className="hotspot-summary__chip">
+          <span className="hotspot-summary__icon" aria-hidden>
+            <Clock className="h-4 w-4" strokeWidth={1.75} />
+          </span>
+          <div className="hotspot-summary__copy">
+            <span className="hotspot-summary__value tabular-nums">{(durationMs / 1000).toFixed(1)}s</span>
+            <span className="hotspot-summary__label">扫描耗时</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 前三名序号样式，仅顶级行使用以突出「空间元凶」 */
+function getRankBadgeClass(rank: number, isChild?: boolean): string {
+  if (isChild || rank > 3) return '';
+  return `hotspot-row__rank--top${rank}`;
+}
+
+/** 顶级前三名整行轻底色，与序号徽章呼应 */
+function getTopRowClass(rank: number, isChild?: boolean): string {
+  if (isChild || rank > 3) return '';
+  return `hotspot-row--featured-${rank}`;
 }
 
 function HotspotItem({ entry, rank, maxSize, isFullScan, onOpenFolder, onCleanup, onSearch, parentName, isChild, treeDepth = 0, onDrillDown }: HotspotItemProps) {
   const { settings } = useSettings();
-  // 根据用户设置的展示深度动态控制树形展开层数：treeDepth 0 为顶级，settings.hotspotDepth 限制最多展示层数
   const maxTreeDepth = settings.hotspotDepth;
-  // 计算占比条宽度
   const percentage = maxSize > 0 ? (entry.total_size / maxSize) * 100 : 0;
-  
-  // 【安全措施】深度扫描模式下，或者 is_safe_to_clean 为 false 时，禁用清理按钮
   const canCleanup = !isFullScan && entry.is_safe_to_clean && entry.is_cache && !entry.is_program && !entry.is_protected;
-  
-  // 生成路径简写：父目录 > 子目录
-  const displayName = parentName ? `${parentName} > ${entry.name}` : entry.name;
-  
-  // 树形结构渐进缩进：每层递进 24px，随用户设置的深度动态调整上限
-  const indentStyle = treeDepth > 0
-    ? { paddingLeft: `${Math.min(treeDepth, maxTreeDepth) * 24}px`, borderLeft: '2px solid var(--border-color)' }
-    : {};
+  const displayName = parentName ? `${parentName} › ${entry.name}` : entry.name;
+  const depthClass = treeDepth > 0 ? `hotspot-row--depth-${Math.min(treeDepth, 3)}` : '';
+  const rankBadgeClass = getRankBadgeClass(rank, isChild);
+  const featuredRowClass = getTopRowClass(rank, isChild);
+  const barPercent = Math.max(percentage, 4);
 
   return (
-    <div style={indentStyle}>
-      <div className={`group relative bg-[var(--bg-main)] rounded-xl p-3 hover:bg-[var(--bg-hover)] transition-colors ${
-        entry.is_protected ? 'border border-red-200 dark:border-red-800/30' : ''
-      } ${isChild ? 'bg-opacity-50' : ''}`}>
-      {/* 占比背景条 */}
-      <div 
-        className={`absolute inset-0 rounded-xl opacity-50 transition-all ${
-          entry.is_protected ? 'bg-red-100 dark:bg-red-900/10' : 'bg-[var(--brand-green-10)]'
-        }`}
-        style={{ width: `${percentage}%` }}
-      />
-      
-      <div className="relative flex items-center gap-3">
-        {/* 文件夹徽标：用文件夹作为主视觉，序号作为角标，避免纯序号块和树线抢视觉焦点。 */}
-        <div className="flex-shrink-0 relative w-10 h-9 flex items-center justify-center">
-          <div className={`relative w-9 h-7 rounded-md shadow-sm ${
-            entry.is_protected
-              ? 'bg-red-400'
-              : rank <= 3
-                ? 'bg-amber-400'
-                : 'bg-amber-300'
-          }`}>
-            <div className={`absolute -top-1 left-1.5 h-2.5 w-4 rounded-t-md ${
-              entry.is_protected
-                ? 'bg-red-300'
-                : rank <= 3
-                  ? 'bg-amber-300'
-                  : 'bg-amber-200'
-            }`} />
-            <div className="absolute inset-x-0 bottom-0 h-5 rounded-md bg-gradient-to-b from-yellow-300 to-amber-500" />
-          </div>
-          <span className={`absolute -right-0.5 -bottom-0.5 min-w-5 h-5 px-1 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ${
-            entry.is_protected ? 'bg-red-500 text-white' : 'bg-[var(--brand-green)] text-white'
-          }`}>
-            {rank}
-          </span>
+    <div className="hotspot-tree-node">
+      <div
+        className={`hotspot-row group ${depthClass} ${featuredRowClass} ${
+          entry.is_protected ? 'hotspot-row--protected' : ''
+        } ${isChild ? 'hotspot-row--child' : ''}`}
+      >
+        <div className={`hotspot-row__rank tabular-nums ${rankBadgeClass}`} aria-hidden>
+          {rank}
         </div>
-        
-        {/* 文件夹信息 */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-sm text-[var(--text-primary)] truncate">
-              {isChild ? displayName : entry.name}
-            </span>
-            {/* 下钻深度指示器 */}
-            {entry.depth > 0 && (
-              <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded text-purple-500 bg-purple-50 dark:bg-purple-900/20">
-                L{entry.depth}
-              </span>
-            )}
-            <span className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded ${getParentTypeColor(entry.parent_type)}`}>
-              {entry.parent_type}
-            </span>
-            {/* 系统保护目录标签 - 深度扫描时显示 */}
-            {entry.is_protected && (
-              <span className="flex-shrink-0 flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded text-red-500 bg-red-50 dark:bg-red-900/20">
-                <Shield className="w-3 h-3" />
-                系统保护
-              </span>
-            )}
-            {/* 程序目录标签 - 红色警告，禁止删除 */}
-            {entry.is_program && !entry.is_protected && (
-              <span className="flex-shrink-0 flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded text-red-500 bg-red-50 dark:bg-red-900/20">
-                <ShieldAlert className="w-3 h-3" />
-                系统/程序
-              </span>
-            )}
-            {/* 缓存目录标签 - 建议清理（仅非深度扫描模式显示） */}
-            {entry.is_cache && !entry.is_program && !entry.is_protected && !isFullScan && (
-              <span className="flex-shrink-0 flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded text-orange-500 bg-orange-50 dark:bg-orange-900/20">
-                <Trash2 className="w-3 h-3" />
-                临时缓存
-              </span>
-            )}
-            {/* 深度扫描只读提示 */}
-            {isFullScan && !entry.is_protected && (
-              <span className="flex-shrink-0 flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded text-blue-500 bg-blue-50 dark:bg-blue-900/20">
-                <Eye className="w-3 h-3" />
-                仅查看
-              </span>
-            )}
-          </div>
-          <div 
-            className="text-xs text-[var(--text-muted)] mt-0.5 truncate cursor-help"
-            title={entry.path}
-          >
-            {middleEllipsis(entry.path)}
-          </div>
-        </div>
-        
-        {/* 统计信息 */}
-        <div className="flex-shrink-0 flex items-center gap-4 text-xs">
-          {/* 文件数 */}
-          <div className="hidden sm:flex items-center gap-1 text-[var(--text-muted)]">
-            <HardDrive className="w-3 h-3" />
-            <span>{entry.file_count.toLocaleString()} 个</span>
-          </div>
-          
-          {/* 最后修改时间 */}
-          <div className="hidden md:flex items-center gap-1 text-[var(--text-muted)]">
-            <Clock className="w-3 h-3" />
-            <span>{formatDateTime(entry.last_modified)}</span>
-          </div>
-          
-          {/* 大小 */}
-          <div className={`font-semibold min-w-[70px] text-right ${
-            entry.is_protected ? 'text-red-500' : 'text-[var(--brand-green)]'
-          }`}>
-            {formatSize(entry.total_size)}
-          </div>
-          
-          {/* 操作按钮组 */}
-          <div className="flex items-center gap-1">
-            {/* 下钻按钮 — 始终显示，已展示3个子节点时用户可能还想继续探索 */}
-            {onDrillDown && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDrillDown(entry.path);
-                }}
-                className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-[var(--brand-green-10)] text-[var(--brand-green)] transition-all"
-                title="展开下级目录"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            )}
 
-            {/* 清理按钮 - 仅在非深度扫描模式且可清理时显示 */}
-            {canCleanup && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCleanup(entry);
-                }}
-                className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/30 text-orange-500 transition-all"
-                title="清理缓存文件"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+        <div className={`hotspot-row__icon ${entry.is_protected ? 'hotspot-row__icon--danger' : ''}`}>
+          <FolderOpen className="hotspot-row__icon-svg" strokeWidth={1.75} />
+        </div>
+
+        <div className="hotspot-row__body min-w-0 flex-1">
+          <div className="hotspot-row__head">
+            <span className="hotspot-row__name truncate" title={displayName}>
+              {displayName}
+            </span>
+            <div className="hotspot-row__tags">
+              {entry.depth > 0 && (
+                <span className="hotspot-tag hotspot-tag--depth">L{entry.depth}</span>
+              )}
+              <span className={`hotspot-tag hotspot-tag--type ${getParentTypeTagClass(entry.parent_type)}`}>
+                {entry.parent_type}
+              </span>
+              {entry.is_protected && (
+                <span className="hotspot-tag hotspot-tag--danger">
+                  <Shield className="h-3 w-3" />
+                  系统保护
+                </span>
+              )}
+              {entry.is_program && !entry.is_protected && (
+                <span className="hotspot-tag hotspot-tag--danger">
+                  <ShieldAlert className="h-3 w-3" />
+                  系统/程序
+                </span>
+              )}
+              {entry.is_cache && !entry.is_program && !entry.is_protected && !isFullScan && (
+                <span className="hotspot-tag hotspot-tag--warn">
+                  <Trash2 className="h-3 w-3" />
+                  临时缓存
+                </span>
+              )}
+              {isFullScan && !entry.is_protected && (
+                <span className="hotspot-tag hotspot-tag--info">
+                  <Eye className="h-3 w-3" />
+                  仅查看
+                </span>
+              )}
+            </div>
+          </div>
+
+          <p className="hotspot-row__path truncate" title={entry.path}>
+            {middleEllipsis(entry.path)}
+          </p>
+
+          <div className="hotspot-row__bar-wrap">
+            <div className="hotspot-row__bar" aria-hidden>
+              <div
+                className={`hotspot-row__bar-fill ${entry.is_protected ? 'hotspot-row__bar-fill--danger' : ''}`}
+                style={{ width: `${barPercent}%` }}
+              />
+            </div>
+            <span className="hotspot-row__bar-label tabular-nums">{percentage.toFixed(0)}%</span>
+          </div>
+
+          <div className="hotspot-row__meta">
+            <span className="hotspot-row__meta-item">
+              <HardDrive className="h-3 w-3" />
+              {entry.file_count.toLocaleString()} 个
+            </span>
+            {formatDateTime(entry.last_modified) && (
+              <span className="hotspot-row__meta-item hidden md:inline-flex">
+                <Clock className="h-3 w-3" />
+                {formatDateTime(entry.last_modified)}
+              </span>
             )}
-            
-            {/* 搜索按钮 - 搜索该文件夹是否可以删除 全路径用.path，文件夹名称用.name */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onSearch(entry.path);
-              }}
-              className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-blue-500 transition-all"
-              title="搜索该文件夹是否可以删除"
-            >
-              <Search className="w-4 h-4" />
-            </button>
-            
-            {/* 打开文件夹按钮 */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenFolder(entry.path);
-              }}
-              className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all"
-              title="在文件资源管理器中打开"
-            >
-              <FolderOpen className="w-4 h-4" />
-            </button>
           </div>
         </div>
+
+        <div className={`hotspot-row__size tabular-nums ${entry.is_protected ? 'hotspot-row__size--danger' : ''}`}>
+          <span className="hotspot-row__size-pill">{formatSize(entry.total_size)}</span>
+        </div>
+
+        <div className="hotspot-row__actions">
+          {onDrillDown && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onDrillDown(entry.path);
+              }}
+              className="hotspot-action hotspot-action--brand"
+              title="展开下级目录"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          )}
+          {canCleanup && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onCleanup(entry);
+              }}
+              className="hotspot-action hotspot-action--warn"
+              title="清理缓存文件"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onSearch(entry.path);
+            }}
+            className="hotspot-action"
+            title="搜索该文件夹是否可以删除"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenFolder(entry.path);
+            }}
+            className="hotspot-action"
+            title="在文件资源管理器中打开"
+          >
+            <FolderOpen className="h-4 w-4" />
+          </button>
+        </div>
       </div>
-      </div>
-      
-      {/* 递归渲染子目录 — 最多展示 3 层树形结构 */}
+
       {treeDepth < maxTreeDepth - 1 && entry.children && entry.children.length > 0 && (
-        <div className="mt-1 space-y-1">
+        <div className="hotspot-tree-children">
           {entry.children.map((child, idx) => (
             <HotspotItem
               key={child.path}
@@ -399,7 +394,7 @@ function HotspotItem({ entry, rank, maxSize, isFullScan, onOpenFolder, onCleanup
               onCleanup={onCleanup}
               onSearch={onSearch}
               parentName={entry.name}
-              isChild={true}
+              isChild
               treeDepth={treeDepth + 1}
               onDrillDown={onDrillDown}
             />
@@ -410,17 +405,39 @@ function HotspotItem({ entry, rank, maxSize, isFullScan, onOpenFolder, onCleanup
   );
 }
 
+/** 父目录类型标签的语义色，改用 CSS 类避免行内 Tailwind 堆叠 */
+function getParentTypeTagClass(type: string): string {
+  switch (type) {
+    case 'Local':
+      return 'hotspot-tag--local';
+    case 'Roaming':
+      return 'hotspot-tag--roaming';
+    case 'LocalLow':
+      return 'hotspot-tag--locallow';
+    case 'Windows':
+      return 'hotspot-tag--windows';
+    case 'Program Files':
+    case 'Program Files (x86)':
+      return 'hotspot-tag--programfiles';
+    case 'Users':
+      return 'hotspot-tag--users';
+    case 'System':
+      return 'hotspot-tag--system';
+    default:
+      return 'hotspot-tag--default';
+  }
+}
+
 // ============================================================================
 // 主组件
 // ============================================================================
 
 export function HotspotModule({ layoutMode = 'cards', isPageActive = true }: ModuleRenderProps) {
-  const { moduleState, expandedModule, setExpandedModule, updateModuleState, oneClickScanTrigger, stopScanTrigger } = useModuleDashboard('hotspot');
+  const { moduleState, expandedModule, setExpandedModule, updateModuleState, stopScanTrigger } = useModuleDashboard('hotspot');
   const { showToast } = useToast();
   const { settings } = useSettings();
   const { drives } = useLocalDrives();
 
-  const lastScanTriggerRef = useRef(0);
   const scanningRef = useRef(false);
   const cancelRequestedRef = useRef(false);
   const scanRunIdRef = useRef(0);
@@ -610,13 +627,7 @@ export function HotspotModule({ layoutMode = 'cards', isPageActive = true }: Mod
   // 同步 handleScanRef 供模态框清理回调使用
   handleScanRef.current = handleScan;
 
-  // 响应一键扫描
-  useEffect(() => {
-    if (oneClickScanTrigger > 0 && oneClickScanTrigger !== lastScanTriggerRef.current) {
-      lastScanTriggerRef.current = oneClickScanTrigger;
-      handleScan();
-    }
-  }, [oneClickScanTrigger, handleScan]);
+  useOneClickScanListener('hotspot', handleScan);
 
   useEffect(() => {
     if (stopScanTrigger > 0 && scanningRef.current) {
@@ -754,34 +765,40 @@ export function HotspotModule({ layoutMode = 'cards', isPageActive = true }: Mod
     >
       {/* 扫描中状态 */}
       {moduleState.status === 'scanning' && (
-        <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
-          <Loader2 className="w-8 h-8 animate-spin text-[var(--brand-green)] mb-3" />
-          <p className="text-sm flex items-center gap-2">
-            {fullScanEnabled ? `正在深度扫描 ${selectedDriveLabel}...` : '正在扫描 AppData 目录...'}
-            {/* 扫描引擎模式标签 — MFT 直读 vs 常规遍历 */}
-            {fullScanEnabled && scanProgress && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                scanProgress.backend === 'mft'
-                  ? 'bg-[var(--brand-green-10)] text-[var(--brand-green)]'
-                  : 'bg-[var(--bg-hover)] text-[var(--text-muted)]'
-              }`}>
-                {scanProgress.backend === 'mft' ? 'MFT 直读' : '常规遍历'}
-              </span>
-            )}
-          </p>
-          <p className="text-xs mt-1">
-            {fullScanEnabled ? '深度扫描可能需要较长时间，请耐心等待' : '这可能需要几秒钟'}
-          </p>
-          {fullScanEnabled && !settings.hotspotIgnoreSystemDirs && (
-            <p className="text-xs mt-1 text-amber-500">⚠ 已关闭系统目录过滤，扫描时间可能较长</p>
-          )}
-          {fullScanEnabled && selectedDrive && !selectedDrive.is_ntfs && (
-            <p className="text-xs mt-1 text-amber-500">当前分区不是 NTFS，将无法使用 MFT 深度扫描</p>
-          )}
-
-          {/* 深度扫描进度：展示关键阶段和耗时，用于判断瓶颈在枚举、读大小还是聚合。 */}
+        <ModuleScanPanel
+          icon={Flame}
+          title={
+            fullScanEnabled
+              ? `正在深度扫描 ${selectedDriveLabel}`
+              : '正在扫描 AppData 目录'
+          }
+          description={
+            fullScanEnabled
+              ? '深度扫描可能需要较长时间，请耐心等待'
+              : '这可能需要几秒钟'
+          }
+          backend={fullScanEnabled && scanProgress ? scanProgress.backend : undefined}
+          backendLabel={
+            fullScanEnabled && scanProgress
+              ? scanProgress.backend === 'mft'
+                ? 'MFT 直读'
+                : '常规遍历'
+              : undefined
+          }
+          warnings={[
+            ...(fullScanEnabled && !settings.hotspotIgnoreSystemDirs
+              ? ['已关闭系统目录过滤，扫描时间可能较长']
+              : []),
+            ...(fullScanEnabled && selectedDrive && !selectedDrive.is_ntfs
+              ? ['当前分区不是 NTFS，将无法使用 MFT 深度扫描']
+              : []),
+          ]}
+          onStop={fullScanEnabled ? handleStopScan : undefined}
+          padded={false}
+          className="mx-4 my-4 sm:mx-5 sm:my-5"
+        >
           {fullScanEnabled && scanProgress && (
-            <div className="mt-3 w-full max-w-2xl">
+            <div className="mt-4 w-full max-w-2xl text-left">
               <HotspotDiagnostics
                 logs={progressLogs}
                 totalElapsedMs={scanProgress.elapsed_ms || scanElapsed * 1000}
@@ -789,44 +806,24 @@ export function HotspotModule({ layoutMode = 'cards', isPageActive = true }: Mod
               />
             </div>
           )}
-
-          {/* 取消按钮（仅深度扫描时显示） */}
-          {fullScanEnabled && (
-            <button
-              onClick={handleStopScan}
-              className="mt-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
-                bg-red-50 dark:bg-red-900/20 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30
-                border border-red-200 dark:border-red-800/30 transition-colors"
-            >
-              <XCircle className="w-3.5 h-3.5" />
-              停止扫描
-            </button>
-          )}
-        </div>
+        </ModuleScanPanel>
       )}
 
       {/* 扫描结果 */}
       {moduleState.status === 'done' && scanResult && (
-        <div className="space-y-3">
-          {/* 深度扫描安全提示 */}
+        <div className="hotspot-results p-4 sm:p-5 space-y-4">
           {scanResult.is_full_scan && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs text-blue-600 dark:text-blue-400">
-              <Eye className="w-4 h-4 flex-shrink-0" />
+            <div className="hotspot-notice">
+              <Eye className="h-4 w-4 shrink-0" />
               <span>深度扫描模式：仅供查看分析，清理功能已禁用以保护系统安全</span>
             </div>
           )}
 
-          {/* 统计摘要 */}
-          <div className="flex items-center justify-between px-1 text-xs text-[var(--text-muted)]">
-            <div className="flex items-center gap-4 mt-4">
-              <span>共 <strong className="text-[var(--text-primary)]">{scanResult.total_folders_scanned.toLocaleString()}</strong> 个文件夹</span>
-              <span title="扫描遍历到的所有文件累计大小；系统保护目录（WinSxS 等）因性能原因跳过，实际磁盘占用更大">
-                覆盖总大小{' '}
-                <strong className="text-[var(--brand-green)]">{formatSize(scanResult.scanned_total_size)}</strong>
-              </span>
-            </div>
-            <span>耗时 {(scanResult.scan_duration_ms / 1000).toFixed(1)}s</span>
-          </div>
+          <HotspotSummary
+            folderCount={scanResult.total_folders_scanned}
+            totalSize={scanResult.scanned_total_size}
+            durationMs={scanResult.scan_duration_ms}
+          />
 
           {scanResult.is_full_scan && (
             <HotspotDiagnostics
@@ -836,9 +833,16 @@ export function HotspotModule({ layoutMode = 'cards', isPageActive = true }: Mod
             />
           )}
 
-          {/* 目录列表 */}
-          <div className="space-y-2">
-            {displayedEntries.map((entry, index) => (
+          <div className="hotspot-list">
+            <div className="hotspot-list__header" aria-hidden>
+              <span className="hotspot-list__col hotspot-list__col--rank">#</span>
+              <span className="hotspot-list__col hotspot-list__col--icon" />
+              <span className="hotspot-list__col hotspot-list__col--body">目录与路径</span>
+              <span className="hotspot-list__col hotspot-list__col--size">占用</span>
+              <span className="hotspot-list__col hotspot-list__col--actions">操作</span>
+            </div>
+            <div className="motion-stagger">
+              {displayedEntries.map((entry, index) => (
               <HotspotItem
                 key={entry.path}
                 entry={entry}
@@ -852,42 +856,43 @@ export function HotspotModule({ layoutMode = 'cards', isPageActive = true }: Mod
                 onDrillDown={handleDrillDown}
               />
             ))}
+            </div>
           </div>
 
-          {/* 展开/收起按钮 */}
           {scanResult.entries.length > 10 && (
             <button
+              type="button"
               onClick={() => setShowAll(!showAll)}
-              className="w-full flex items-center justify-center gap-1 py-2 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              className="hotspot-expand-btn"
             >
               <span>{showAll ? '收起' : `显示全部 ${scanResult.entries.length} 项`}</span>
-              <ChevronDown className={`w-4 h-4 transition-transform ${showAll ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`h-4 w-4 transition-transform ${showAll ? 'rotate-180' : ''}`} />
             </button>
           )}
 
-          {/* 空状态 */}
           {scanResult.entries.length === 0 && (
-            <div className="p-4">
-              <EmptyState
-                icon={Flame}
-                tone="success"
-                title="未发现大型目录"
-                description="当前阈值下没有需要特别关注的大目录。"
-              />
-            </div>
+            <EmptyState
+              icon={Flame}
+              tone="success"
+              title="未发现大型目录"
+              description="当前阈值下没有需要特别关注的大目录。"
+              compact
+            />
           )}
         </div>
       )}
 
       {/* 初始状态 */}
       {moduleState.status === 'idle' && !scanResult && (
-        <div className="p-4">
+        <ModulePageContent layoutMode={layoutMode} centerIdle>
           <EmptyState
+            page={layoutMode === 'pages'}
             icon={Flame}
             title="尚未分析大目录"
-            description="点击开始扫描，定位占用空间较大的目录。"
+            description="定位占用空间较大的目录，优先关注可释放空间的热点。"
+            action={<EmptyScanAction onClick={handleScan} />}
           />
-        </div>
+        </ModulePageContent>
       )}
 
       {/* 清理确认对话框 */}

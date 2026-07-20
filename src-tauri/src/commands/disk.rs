@@ -15,7 +15,7 @@ pub struct DiskInfo {
     pub drive_letter: String,
 }
 
-/// 本机固定分区信息，后续大文件、大目录等多盘模块也复用这份结构。
+/// 本机分区信息，含固定磁盘与可移动存储（U 盘）；多盘模块默认只用固定盘。
 #[derive(Debug, Serialize)]
 pub struct LocalDriveInfo {
     pub drive_letter: String,
@@ -28,6 +28,8 @@ pub struct LocalDriveInfo {
     pub usage_percent: f32,
     pub is_system: bool,
     pub is_ntfs: bool,
+    /// 是否为可移动存储（U 盘等），供顶栏展示与扫描模块区分。
+    pub is_removable: bool,
 }
 
 /// 获取C盘磁盘信息
@@ -37,7 +39,7 @@ pub fn get_disk_info() -> Result<DiskInfo, String> {
 
     #[cfg(target_os = "windows")]
     {
-        let drive = query_drive_info('C')?;
+        let drive = query_drive_info('C', false)?;
 
         Ok(DiskInfo {
             total_space: drive.total_space,
@@ -54,15 +56,15 @@ pub fn get_disk_info() -> Result<DiskInfo, String> {
     }
 }
 
-/// 获取本机固定磁盘分区列表。
+/// 获取本机分区列表（固定磁盘 + 可移动 U 盘）。
 #[tauri::command]
 pub fn get_local_drives() -> Result<Vec<LocalDriveInfo>, String> {
-    info!("获取本机固定磁盘分区列表");
+    info!("获取本机磁盘分区列表");
 
     #[cfg(target_os = "windows")]
     {
         use winapi::um::fileapi::{GetDriveTypeW, GetLogicalDrives};
-        use winapi::um::winbase::DRIVE_FIXED;
+        use winapi::um::winbase::{DRIVE_FIXED, DRIVE_REMOVABLE};
 
         let mask = unsafe { GetLogicalDrives() };
         if mask == 0 {
@@ -79,11 +81,12 @@ pub fn get_local_drives() -> Result<Vec<LocalDriveInfo>, String> {
             let root = format!("{}:\\", letter);
             let wide_root = wide_null(&root);
             let drive_type = unsafe { GetDriveTypeW(wide_root.as_ptr()) };
-            if drive_type != DRIVE_FIXED {
+            let is_removable = drive_type == DRIVE_REMOVABLE;
+            if drive_type != DRIVE_FIXED && !is_removable {
                 continue;
             }
 
-            match query_drive_info(letter) {
+            match query_drive_info(letter, is_removable) {
                 Ok(drive) => drives.push(drive),
                 Err(error) => {
                     // 单个分区异常不应阻断列表展示，避免坏盘或权限问题拖垮整个设置入口。
@@ -92,7 +95,14 @@ pub fn get_local_drives() -> Result<Vec<LocalDriveInfo>, String> {
             }
         }
 
-        drives.sort_by(|left, right| left.drive_letter.cmp(&right.drive_letter));
+        drives.sort_by(|left, right| {
+            // 系统盘优先，其次固定盘，U 盘排在最后；同组内按盘符排序。
+            left.is_system
+                .cmp(&right.is_system)
+                .reverse()
+                .then_with(|| left.is_removable.cmp(&right.is_removable))
+                .then_with(|| left.drive_letter.cmp(&right.drive_letter))
+        });
         Ok(drives)
     }
 
@@ -103,7 +113,7 @@ pub fn get_local_drives() -> Result<Vec<LocalDriveInfo>, String> {
 }
 
 #[cfg(target_os = "windows")]
-fn query_drive_info(letter: char) -> Result<LocalDriveInfo, String> {
+fn query_drive_info(letter: char, is_removable: bool) -> Result<LocalDriveInfo, String> {
     use winapi::um::fileapi::GetDiskFreeSpaceExW;
     use winapi::um::winnt::ULARGE_INTEGER;
 
@@ -156,6 +166,7 @@ fn query_drive_info(letter: char) -> Result<LocalDriveInfo, String> {
         free_space: free,
         usage_percent,
         is_system: drive_letter == system_drive,
+        is_removable,
     })
 }
 

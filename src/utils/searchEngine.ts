@@ -1,10 +1,13 @@
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { readMigratedStorageItem } from './storageMigration';
 
 export type SearchEngine = 'bing' | 'google' | 'baidu';
 
-export const SEARCH_ENGINE_STORAGE_KEY = 'lightc.searchEngine';
+export const SEARCH_ENGINE_STORAGE_KEY = 'luoscope.searchEngine';
+const LEGACY_SEARCH_ENGINE_KEYS = ['lightc.searchEngine'];
 
-export const SEARCH_ENGINE_CHANGED_EVENT = 'lightc:search-engine-changed';
+export const SEARCH_ENGINE_CHANGED_EVENT = 'luoscope:search-engine-changed';
+export const LEGACY_SEARCH_ENGINE_CHANGED_EVENT = 'lightc:search-engine-changed';
 
 export const SEARCH_ENGINE_OPTIONS: Array<{ value: SearchEngine; label: string }> = [
   { value: 'bing', label: 'Bing' },
@@ -24,7 +27,10 @@ export function isSearchEngine(value: unknown): value is SearchEngine {
 
 export function getStoredSearchEngine(): SearchEngine {
   try {
-    const storedValue = localStorage.getItem(SEARCH_ENGINE_STORAGE_KEY);
+    const storedValue = readMigratedStorageItem(
+      SEARCH_ENGINE_STORAGE_KEY,
+      LEGACY_SEARCH_ENGINE_KEYS,
+    );
     return isSearchEngine(storedValue) ? storedValue : 'bing';
   } catch {
     return 'bing';

@@ -12,7 +12,9 @@ import { clearSelectedLocalData, getStorageLocationInfo, listClearableDataItems,
 import { formatSize } from '../../utils/format';
 import { getStoredSearchEngine, SEARCH_ENGINE_CHANGED_EVENT, SEARCH_ENGINE_OPTIONS, setStoredSearchEngine, type SearchEngine } from '../../utils/searchEngine';
 import { ClearLocalDataDialog } from './ClearLocalDataDialog';
-import { FONT_SIZE_CONFIGS, FONT_SIZE_OPTIONS, LAYOUT_MODE_OPTIONS, THEME_OPTIONS } from './constants';
+import { FONT_SIZE_CONFIGS, FONT_SIZE_OPTIONS, THEME_OPTIONS } from './constants';
+import { LayoutModePicker } from './LayoutModePicker';
+import { SettingsIconSegmented, SettingsPanel, SettingsRow, SettingsSection, SettingsSegmented } from './SettingsUi';
 
 export function GeneralSettings({ mode, setMode }: { mode: ThemeMode; setMode: (mode: ThemeMode) => void }) {
   const { level: fontSizeLevel, setLevel: setFontSizeLevel, customFontSize, setCustomFontSize } = useFontSize();
@@ -171,150 +173,117 @@ export function GeneralSettings({ mode, setMode }: { mode: ThemeMode; setMode: (
   };
 
   return (
-    <div className="space-y-6">
-      {/* 常规设置 */}
-      <div className="space-y-3">
-        <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-2">
-          <MonitorCog className="w-3.5 h-3.5" />
-          常规设置
-        </h4>
-        <div className="bg-[var(--bg-main)] rounded-2xl p-5 space-y-5">
-          {/* 主题模式 */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-[var(--text-primary)]">主题模式</p>
-              <p className="text-xs text-[var(--text-muted)] mt-1">选择应用的外观主题</p>
-            </div>
-            {/* 分段控制器 - 仅显示图标 */}
-            <div className="flex items-center gap-1 p-1 bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)]">
-              {THEME_OPTIONS.map(({ mode: m, label, icon: Icon }) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  title={label}
-                  className={`flex items-center justify-center p-2 rounded-lg transition-all duration-200 ${mode === m
-                      ? 'bg-[var(--brand-green)] text-white'
-                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                    }`}
-                >
-                  <Icon className="w-4 h-4" />
-                </button>
-              ))}
-            </div>
-          </div>
+    <div className="space-y-8">
+      <SettingsSection icon={MonitorCog} title="常规设置">
+        <SettingsPanel>
+          <SettingsRow label="主题模式" description="选择应用的外观主题">
+            <SettingsIconSegmented
+              options={THEME_OPTIONS.map(({ mode: themeMode, label, icon }) => ({
+                value: themeMode,
+                label,
+                icon,
+                title: label,
+              }))}
+              value={mode}
+              onChange={setMode}
+            />
+          </SettingsRow>
 
-          {/* 字体大小 */}
-          <div className="pt-4 border-t border-[var(--border-color)]">
-            <div className="flex flex-wrap items-center gap-3">
-            <div className="min-w-[140px] flex-1">
-              <p className="text-sm font-medium text-[var(--text-primary)] flex items-center gap-1.5">
-                <Type className="w-4 h-4 text-[var(--text-muted)]" />
+          <SettingsRow
+            bordered
+            label={
+              <span className="inline-flex items-center gap-1.5">
+                <Type className="h-4 w-4 text-[var(--text-muted)]" />
                 字体大小
-              </p>
-              <p className="text-xs text-[var(--text-muted)] mt-1">调整应用内文字大小</p>
-            </div>
-            {/* 字号分段控制器 */}
-            <div className="flex max-w-full shrink-0 flex-wrap items-center gap-1 p-1 bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)]">
-              {FONT_SIZE_OPTIONS.map(({ level, label }) => (
-                <button
-                  key={level}
-                  onClick={() => setFontSizeLevel(level)}
-                  title={level === 'custom'
+              </span>
+            }
+            description="调整应用内文字大小"
+          >
+            <SettingsSegmented
+              options={FONT_SIZE_OPTIONS.map(({ level, label }) => ({
+                value: level,
+                label,
+                title:
+                  level === 'custom'
                     ? `${label}（当前 ${customFontSize}px）`
-                    : `${label} (+${FONT_SIZE_CONFIGS[level].offset}px)`}
-                  className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 ${fontSizeLevel === level
-                      ? 'bg-[var(--brand-green)] text-white'
-                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                    }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            </div>
+                    : `${label} (+${FONT_SIZE_CONFIGS[level].offset}px)`,
+              }))}
+              value={fontSizeLevel}
+              onChange={setFontSizeLevel}
+            />
+          </SettingsRow>
 
-            {/* 自定义字号单独展开，避免未选择时占用通用设置空间。 */}
-            <AnimatePresence initial={false}>
-              {fontSizeLevel === 'custom' && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0, y: -6 }}
-                  animate={{ opacity: 1, height: 'auto', y: 0 }}
-                  exit={{ opacity: 0, height: 0, y: -6 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="overflow-hidden"
-                >
-                  <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-main)] px-3 py-2.5">
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-[var(--text-secondary)]">自定义字号</p>
-                      <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">范围 {CUSTOM_FONT_SIZE_MIN}-{CUSTOM_FONT_SIZE_MAX}px</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <input
-                        type="number"
-                        min={CUSTOM_FONT_SIZE_MIN}
-                        max={CUSTOM_FONT_SIZE_MAX}
-                        step={1}
-                        value={customFontSizeDraft}
-                        onChange={(event) => setCustomFontSizeDraft(event.target.value)}
-                        onBlur={() => {
-                          const parsedValue = Number(customFontSizeDraft);
-                          const nextValue = Number.isFinite(parsedValue)
-                            ? Math.min(CUSTOM_FONT_SIZE_MAX, Math.max(CUSTOM_FONT_SIZE_MIN, Math.floor(parsedValue)))
-                            : customFontSize;
-                          setCustomFontSize(nextValue);
-                          setCustomFontSizeDraft(String(nextValue));
-                        }}
-                        className="h-9 w-20 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] px-3 text-right text-sm text-[var(--text-primary)] outline-none transition focus:border-[var(--brand-green)]"
-                        title={`自定义字号，范围 ${CUSTOM_FONT_SIZE_MIN}-${CUSTOM_FONT_SIZE_MAX}px`}
-                      />
-                      <span className="text-xs text-[var(--text-muted)]">px</span>
-                    </div>
+          <AnimatePresence initial={false}>
+            {fontSizeLevel === 'custom' && (
+              <motion.div
+                initial={{ opacity: 0, height: 0, y: -6 }}
+                animate={{ opacity: 1, height: 'auto', y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -6 }}
+                transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
+                className="overflow-hidden"
+              >
+                <div className="mt-4 flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--border-muted)] bg-[var(--bg-hover)]/70 px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-[var(--text-secondary)]">自定义字号</p>
+                    <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                      范围 {CUSTOM_FONT_SIZE_MIN}-{CUSTOM_FONT_SIZE_MAX}px
+                    </p>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <input
+                      type="number"
+                      min={CUSTOM_FONT_SIZE_MIN}
+                      max={CUSTOM_FONT_SIZE_MAX}
+                      step={1}
+                      value={customFontSizeDraft}
+                      onChange={(event) => setCustomFontSizeDraft(event.target.value)}
+                      onBlur={() => {
+                        const parsedValue = Number(customFontSizeDraft);
+                        const nextValue = Number.isFinite(parsedValue)
+                          ? Math.min(CUSTOM_FONT_SIZE_MAX, Math.max(CUSTOM_FONT_SIZE_MIN, Math.floor(parsedValue)))
+                          : customFontSize;
+                        setCustomFontSize(nextValue);
+                        setCustomFontSizeDraft(String(nextValue));
+                      }}
+                      className="settings-input"
+                      title={`自定义字号，范围 ${CUSTOM_FONT_SIZE_MIN}-${CUSTOM_FONT_SIZE_MAX}px`}
+                    />
+                    <span className="text-xs text-[var(--text-muted)]">px</span>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {/* 布局设置 */}
-          <div className="flex items-center justify-between pt-4 border-t border-[var(--border-color)]">
-            <div>
-              <p className="text-sm font-medium text-[var(--text-primary)] flex items-center gap-1.5">
-                <LayoutGrid className="w-4 h-4 text-[var(--text-muted)]" />
+          <SettingsRow
+            bordered
+            label={
+              <span className="inline-flex items-center gap-1.5">
+                <LayoutGrid className="h-4 w-4 text-[var(--text-muted)]" />
                 布局设置
-              </p>
-              <p className="text-xs text-[var(--text-muted)] mt-1">
-                调整页面布局模式
-              </p>
-            </div>
-            <div className="flex items-center gap-1 p-1 bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)]">
-              {LAYOUT_MODE_OPTIONS.map(({ mode, label, icon: Icon, description }) => (
-                <button
-                  key={mode}
-                  onClick={() => updateSettings({ layoutMode: mode })}
-                  title={`${label}：${description}`}
-                  className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${
-                    settings.layoutMode === mode
-                      ? 'bg-[var(--brand-green)] text-white shadow-sm'
-                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                </button>
-              ))}
-            </div>
-          </div>
+              </span>
+            }
+            description="选择首页布局；分栏模式可在左侧查看各模块扫描状态"
+            stacked
+          >
+            <LayoutModePicker
+              value={settings.layoutMode}
+              onChange={(layoutMode) => updateSettings({ layoutMode })}
+            />
+          </SettingsRow>
 
           <SearchEngineSettings />
 
-          {/* 清理日志保留 */}
-          <div className="flex items-center justify-between pt-4 border-t border-[var(--border-color)]">
-            <div>
-              <p className="text-sm font-medium text-[var(--text-primary)] flex items-center gap-1.5">
-                <ClipboardList className="w-4 h-4 text-[var(--text-muted)]" />
+          <SettingsRow
+            bordered
+            label={
+              <span className="inline-flex items-center gap-1.5">
+                <ClipboardList className="h-4 w-4 text-[var(--text-muted)]" />
                 清理日志保留
-              </p>
-              <p className="text-xs text-[var(--text-muted)] mt-1">超过数量后自动删除最旧日志，范围 1-100 条</p>
-            </div>
+              </span>
+            }
+            description="超过数量后自动删除最旧日志，范围 1-100 条"
+          >
             <div className="flex items-center gap-2">
               <input
                 type="number"
@@ -326,22 +295,18 @@ export function GeneralSettings({ mode, setMode }: { mode: ThemeMode; setMode: (
                   const nextValue = Math.min(100, Math.max(1, Math.floor(Number(event.target.value) || 10)));
                   updateSettings({ cleanupLogRetention: nextValue });
                 }}
-                className="h-9 w-20 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] px-3 text-right text-sm text-[var(--text-primary)] outline-none transition focus:border-[var(--brand-green)]"
+                className="settings-input"
                 title="清理日志最多保留条数"
               />
               <span className="text-xs text-[var(--text-muted)]">条</span>
             </div>
-          </div>
-        </div>
-      </div>
+          </SettingsRow>
+        </SettingsPanel>
+      </SettingsSection>
 
       {/* 数据管理 */}
-      <div className="space-y-3 pt-2 border-t border-[var(--border-color)]">
-        <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-2">
-          <History className="w-3.5 h-3.5" />
-          数据管理
-        </h4>
-        <div className="bg-[var(--bg-main)] rounded-2xl divide-y divide-[var(--border-color)]">
+      <SettingsSection icon={History} title="数据管理" className="pt-2">
+        <SettingsPanel divided className="p-0">
           {/* 当前存储位置 */}
           <div className="space-y-3 p-4">
             <div className="flex items-center justify-between gap-3">
@@ -462,8 +427,8 @@ export function GeneralSettings({ mode, setMode }: { mode: ThemeMode; setMode: (
             </div>
             <ChevronRight className="w-4 h-4 text-[var(--text-muted)] group-hover:text-[var(--text-secondary)] transition-colors" />
           </button>
-        </div>
-      </div>
+        </SettingsPanel>
+      </SettingsSection>
 
       <ClearLocalDataDialog
         isOpen={clearDialogOpen}
@@ -475,17 +440,12 @@ export function GeneralSettings({ mode, setMode }: { mode: ThemeMode; setMode: (
         onConfirm={executeClearData}
       />
 
-      {/* 系统快捷工具 */}
-      <div className="space-y-3 pt-2 border-t border-[var(--border-color)]">
-        <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-2">
-          <Rocket className="w-3.5 h-3.5" />
-          系统快捷工具
-        </h4>
-        <div className="bg-[var(--bg-main)] rounded-2xl divide-y divide-[var(--border-color)]">
+      <SettingsSection icon={Rocket} title="系统快捷工具" className="pt-2">
+        <SettingsPanel divided className="p-0">
           {/* 开机启动管理 */}
           <button
             onClick={() => openStartupManager().catch(console.error)}
-            className="w-full flex items-center justify-between p-4 hover:bg-[var(--bg-hover)] first:rounded-t-2xl transition-colors group"
+            className="group flex w-full items-center justify-between p-4 transition-colors hover:bg-[var(--bg-hover)]"
           >
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-[var(--brand-green-10)] flex items-center justify-center">
@@ -501,7 +461,7 @@ export function GeneralSettings({ mode, setMode }: { mode: ThemeMode; setMode: (
           {/* 存储感知 */}
           <button
             onClick={() => openStorageSettings().catch(console.error)}
-            className="w-full flex items-center justify-between p-4 hover:bg-[var(--bg-hover)] last:rounded-b-2xl transition-colors group"
+            className="group flex w-full items-center justify-between p-4 transition-colors hover:bg-[var(--bg-hover)]"
           >
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-[var(--brand-green-10)] flex items-center justify-center">
@@ -514,8 +474,8 @@ export function GeneralSettings({ mode, setMode }: { mode: ThemeMode; setMode: (
             </div>
             <ChevronRight className="w-4 h-4 text-[var(--text-muted)] group-hover:text-[var(--text-secondary)] transition-colors" />
           </button>
-        </div>
-      </div>
+        </SettingsPanel>
+      </SettingsSection>
     </div>
   );
 }
@@ -551,22 +511,22 @@ function SearchEngineSettings() {
   };
 
   return (
-    <div className="flex items-center justify-between pt-4 border-t border-[var(--border-color)]">
-      <div>
-        <p className="text-sm font-medium text-[var(--text-primary)] flex items-center gap-1.5">
-          <Search className="w-4 h-4 text-[var(--text-muted)]" />
+    <SettingsRow
+      bordered
+      label={
+        <span className="inline-flex items-center gap-1.5">
+          <Search className="h-4 w-4 text-[var(--text-muted)]" />
           搜索引擎
-        </p>
-        <p className="text-xs text-[var(--text-muted)] mt-1">
-          设置各模块搜索按钮打开的默认搜索引擎
-        </p>
-      </div>
+        </span>
+      }
+      description="设置各模块搜索按钮打开的默认搜索引擎"
+    >
       <Select<SearchEngine>
         value={searchEngine}
         options={SEARCH_ENGINE_OPTIONS}
         onChange={handleChange}
         widthClass="w-32"
       />
-    </div>
+    </SettingsRow>
   );
 }

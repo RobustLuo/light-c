@@ -13,6 +13,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { useToast } from './Toast';
 import { getDistributionChannel, type DistributionChannel } from '../api/commands';
 import { getOfficialDownloadConfig } from '../utils/downloadConfig';
+import { useOverlayAnimation } from '../hooks/useOverlayAnimation';
 
 // ============================================================================
 // 类型定义
@@ -86,7 +87,7 @@ export function UpdateModal({ autoCheck = true }: UpdateModalProps) {
   const [currentVersion, setCurrentVersion] = useState('');
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
-  const [isVisible, setIsVisible] = useState(false);
+  const { isVisible, shouldRender, enteredRef } = useOverlayAnimation(isOpen, { exitDuration: 260 });
   const [distributionChannel, setDistributionChannel] = useState<DistributionChannel | null>(null);
   const { showToast } = useToast();
   const sourceRef = useRef<'auto' | 'manual'>('auto');
@@ -154,7 +155,6 @@ export function UpdateModal({ autoCheck = true }: UpdateModalProps) {
     // 手动触发时立即打开弹窗显示 loading，给用户即时反馈
     if (source === 'manual') {
       setIsOpen(true);
-      requestAnimationFrame(() => setIsVisible(true));
     }
 
     try {
@@ -166,12 +166,9 @@ export function UpdateModal({ autoCheck = true }: UpdateModalProps) {
         // auto 模式下需要打开弹窗；manual 模式弹窗已打开，仅切换状态
         if (source === 'auto') {
           setIsOpen(true);
-          requestAnimationFrame(() => setIsVisible(true));
         }
       } else if (source === 'manual') {
-        // 已是最新版本：关闭弹窗 + toast 提示
-        setIsVisible(false);
-        setTimeout(() => setIsOpen(false), 200);
+        setIsOpen(false);
         showToast({
           type: 'success',
           title: '已是最新版本',
@@ -201,8 +198,12 @@ export function UpdateModal({ autoCheck = true }: UpdateModalProps) {
   // 监听手动触发事件（来自 SettingsModal 的"检查更新"按钮）
   useEffect(() => {
     const handler = () => checkForUpdate('manual');
+    window.addEventListener('luoscope:check-update', handler);
     window.addEventListener('lightc:check-update', handler);
-    return () => window.removeEventListener('lightc:check-update', handler);
+    return () => {
+      window.removeEventListener('luoscope:check-update', handler);
+      window.removeEventListener('lightc:check-update', handler);
+    };
   }, [checkForUpdate]);
 
   // 下载并安装更新
@@ -248,8 +249,7 @@ export function UpdateModal({ autoCheck = true }: UpdateModalProps) {
 
   // 关闭模态框
   const handleClose = () => {
-    setIsVisible(false);
-    setTimeout(() => setIsOpen(false), 200);
+    setIsOpen(false);
   };
 
   // 重试（沿用上次的触发来源）
@@ -257,20 +257,24 @@ export function UpdateModal({ autoCheck = true }: UpdateModalProps) {
     checkForUpdate(sourceRef.current);
   };
 
-  if (!isOpen) return null;
+  if (!shouldRender) return null;
 
   return createPortal(
-    <div className={`fixed inset-0 z-[10000] flex items-center justify-center transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
-      {/* 遮罩 */}
-      <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center px-4">
+      <div
+        className={`absolute inset-0 bg-black/35 backdrop-blur-md ${
+          isVisible ? 'modal-overlay-in' : enteredRef.current ? 'modal-overlay-out' : 'opacity-0'
+        }`}
         onClick={status !== 'downloading' ? handleClose : undefined}
       />
-      
-      {/* 模态框内容 */}
-      <div className={`relative w-[420px] bg-[var(--bg-card)] rounded-2xl shadow-2xl overflow-hidden transition-all duration-200 ${isVisible ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}`}>
+
+      <div
+        className={`relative w-[420px] max-w-[calc(100vw-32px)] glass-panel-strong overflow-hidden rounded-[var(--radius-xl)] shadow-[var(--shadow-lg)] ${
+          isVisible ? 'modal-content-in' : enteredRef.current ? 'modal-content-out' : 'opacity-0'
+        }`}
+      >
         {/* 顶部装饰条 */}
-        <div className="h-1.5 bg-gradient-to-r from-[var(--brand-green)] via-emerald-400 to-teal-400" />
+        <div className="h-px bg-[var(--border-muted)]" />
         
         {/* 关闭按钮 */}
         {status !== 'downloading' && (
@@ -289,7 +293,7 @@ export function UpdateModal({ autoCheck = true }: UpdateModalProps) {
             <>
               {/* 标题 */}
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[var(--brand-green)] to-emerald-500 flex items-center justify-center shadow-lg">
+                <div className="w-12 h-12 rounded-[var(--radius-lg)] bg-gradient-to-br from-[var(--brand-green)] to-[var(--brand-green-hover)] flex items-center justify-center shadow-[var(--shadow-glow)]">
                   <Sparkles className="w-6 h-6 text-white" />
                 </div>
                 <div>
@@ -344,7 +348,7 @@ export function UpdateModal({ autoCheck = true }: UpdateModalProps) {
               {/* 进度条 */}
               <div className="w-full h-2 bg-[var(--bg-main)] rounded-full overflow-hidden mb-2">
                 <div 
-                  className="h-full bg-gradient-to-r from-[var(--brand-green)] to-emerald-400 transition-all duration-300"
+                  className="h-full bg-gradient-to-r from-[var(--brand-green)] to-[var(--brand-green-hover)] transition-[width] duration-300 ease-out"
                   style={{ width: `${downloadProgress}%` }}
                 />
               </div>

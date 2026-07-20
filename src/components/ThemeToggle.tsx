@@ -1,5 +1,5 @@
 // ============================================================================
-// 主题切换组件
+// 主题切换组件 — 毛玻璃分段控件
 // ============================================================================
 
 import { Sun, Moon, Monitor } from 'lucide-react';
@@ -11,23 +11,32 @@ const themes: { mode: ThemeMode; icon: typeof Sun; label: string }[] = [
   { mode: 'system', icon: Monitor, label: '系统' },
 ];
 
-export function ThemeToggle() {
+interface ThemeToggleProps {
+  /** 标题栏内嵌模式：去掉外层 glass，与工具栏胶囊一体 */
+  variant?: 'default' | 'inline';
+}
+
+export function ThemeToggle({ variant = 'default' }: ThemeToggleProps) {
   const { mode, setMode } = useTheme();
+  const isInline = variant === 'inline';
 
   return (
-    <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-gray-200 dark:bg-white/10">
-      {themes.map(({ mode: m, icon: Icon, label }) => (
+    <div
+      className={isInline ? 'title-bar-theme-inline' : 'flex items-center gap-0.5 p-0.5 rounded-[var(--radius-sm)] glass-panel'}
+      role="group"
+      aria-label="主题模式"
+    >
+      {themes.map(({ mode: themeMode, icon: Icon, label }) => (
         <button
-          key={m}
-          onClick={() => setMode(m)}
+          key={themeMode}
+          type="button"
+          onClick={() => setMode(themeMode)}
           title={label}
-          className={`p-1.5 rounded transition-all ${
-            mode === m
-              ? 'bg-white dark:bg-white/20 text-emerald-600 dark:text-emerald-400 shadow-sm'
-              : 'text-gray-600 dark:text-white/40 hover:text-gray-800 dark:hover:text-white/60'
-          }`}
+          aria-label={label}
+          aria-pressed={mode === themeMode}
+          className={`title-bar-theme-btn ${mode === themeMode ? 'title-bar-theme-btn--active' : ''}`}
         >
-          <Icon className="w-3.5 h-3.5" />
+          <Icon className="h-3.5 w-3.5" />
         </button>
       ))}
     </div>

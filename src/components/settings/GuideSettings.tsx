@@ -13,7 +13,7 @@ export function GuideSettings() {
           <BookOpen className="w-3.5 h-3.5" />
           功能说明
         </h4>
-        <div className="bg-[var(--bg-main)] rounded-2xl p-5 space-y-4">
+        <div className="settings-panel p-5 space-y-4">
           <div>
             <p className="text-sm font-medium text-[var(--text-primary)] mb-2 flex items-center gap-2">
               <Zap className="w-4 h-4 text-[var(--brand-green)]" />
@@ -86,7 +86,7 @@ export function GuideSettings() {
             </p>
             <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6 mt-1">
               <span className="text-[var(--color-warning)] font-medium">准确性提醒：</span>
-              卸载后的目录归属无法 100% 权威判断，LightC 只做事后推断；清理前请结合路径、大小和软件使用情况自行确认。
+              卸载后的目录归属无法 100% 权威判断，LuoScope 只做事后推断；清理前请结合路径、大小和软件使用情况自行确认。
             </p>
           </div>
           <div>
@@ -96,7 +96,7 @@ export function GuideSettings() {
             </p>
             <p className="text-xs text-[var(--text-muted)] leading-relaxed pl-6">
               扫描 Windows 注册表中的孤立键值和无效引用，包括 MUI 缓存、软件残留键等。
-              <span className="text-[var(--color-warning)] font-medium">删除前会自动备份</span>，备份文件保存在用户文档目录下的 LightC_Backups 文件夹中。
+              <span className="text-[var(--color-warning)] font-medium">删除前会自动备份</span>，备份文件保存在用户文档目录下的 LuoScope/RegistryBackups 文件夹中。
             </p>
           </div>
           <div>
@@ -163,7 +163,7 @@ export function GuideSettings() {
           <ShieldCheck className="w-3.5 h-3.5" />
           评分与安全保障
         </h4>
-        <div className="bg-[var(--bg-main)] rounded-2xl p-5 space-y-4">
+        <div className="settings-panel p-5 space-y-4">
           <div>
             <p className="text-sm font-medium text-[var(--text-primary)] mb-2 flex items-center gap-2">
               <Cpu className="w-4 h-4 text-[var(--brand-green)]" />
@@ -202,7 +202,7 @@ export function GuideSettings() {
           <Shield className="w-3.5 h-3.5" />
           文件风险等级
         </h4>
-        <div className="bg-[var(--bg-main)] rounded-2xl p-5 space-y-3">
+        <div className="settings-panel p-5 space-y-3">
           <div className="flex items-start gap-3">
             <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--brand-green)] text-white shrink-0">安全</span>
             <p className="text-xs text-[var(--text-muted)]">临时文件、缓存文件、日志文件等，删除后不影响系统和软件运行</p>
@@ -266,7 +266,7 @@ export function GuideSettings() {
           <ShieldAlert className="w-3.5 h-3.5" />
           免责声明
         </h4>
-        <div className="bg-[var(--bg-main)] rounded-2xl p-5">
+        <div className="settings-panel p-5">
           <p className="text-xs text-[var(--text-muted)] leading-relaxed">
             本软件仅提供文件扫描和删除功能，所有删除操作均由用户主动确认执行。开发者不对因使用本软件造成的任何数据丢失、系统故障或其他损失承担责任。使用本软件即表示您已了解并接受上述风险，请在操作前做好数据备份。
           </p>

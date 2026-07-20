@@ -57,7 +57,7 @@ export function SupportAuthor() {
           <Coffee className="w-3.5 h-3.5" />
           支持作者
         </h4>
-        <div className="bg-[var(--bg-main)] rounded-2xl p-5">
+        <div className="settings-panel p-5">
           {/* 文案说明 */}
           <p className="text-sm text-[var(--text-secondary)] text-center mb-4">
             维护不易，如果软件对您有帮助，请我吃个猪脚饭~（自愿原则）

@@ -7,10 +7,10 @@ use base64::Engine;
 use minisign_verify::{PublicKey, Signature};
 use serde::Serialize;
 use std::path::PathBuf;
-const INSTALLER_EXE_SIGNATURE_ASSET: &str = "LightC_installer_exe.sig";
-const WEBVIEW2_OFFLINE_EXE_SIGNATURE_ASSET: &str = "LightC_webview2_offline_exe.sig";
-const PORTABLE_EXE_SIGNATURE_ASSET: &str = "LightC_portable_exe.sig";
-const OFFICIAL_RELEASE_URL: &str = "https://github.com/Chunyu33/light-c/releases";
+const INSTALLER_EXE_SIGNATURE_ASSET: &str = "LuoScope_installer_exe.sig";
+const WEBVIEW2_OFFLINE_EXE_SIGNATURE_ASSET: &str = "LuoScope_webview2_offline_exe.sig";
+const PORTABLE_EXE_SIGNATURE_ASSET: &str = "LuoScope_portable_exe.sig";
+const OFFICIAL_RELEASE_URL: &str = "https://github.com/RobustLuo/light-c/releases";
 const UPDATER_PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU3NEJFNkU1NzM3OEQyQTQKUldTazBuaHo1ZVpMVnpKbnUrSnUrWlpVakhKL1c5ZXV3ZXhYeW4wbFRSeVFyb01TZ0h2RGpsZFoK";
 
 #[derive(Debug, Clone, Serialize)]
@@ -38,7 +38,7 @@ struct SignatureSource {
     signature: String,
 }
 
-/// 校验当前正在运行的 LightC.exe 是否由官方签名。
+/// 校验当前正在运行的 LuoScope.exe 是否由官方签名。
 #[tauri::command]
 pub async fn verify_integrity() -> VerifyIntegrityResult {
     match verify_integrity_inner().await {
@@ -146,7 +146,7 @@ async fn fetch_signature_asset(
     let signature_url = release_asset_url(app_version, asset_name);
     let response = reqwest::Client::new()
         .get(&signature_url)
-        .header("User-Agent", "LightC-integrity-check")
+        .header("User-Agent", "LuoScope-integrity-check")
         .send()
         .await
         .map_err(|error| VerifyError::Network(error.to_string()))?;
@@ -179,7 +179,7 @@ async fn fetch_signature_asset(
 fn release_asset_url(app_version: &str, asset_name: &str) -> String {
     // 直接请求当前版本 Release 资产，避免 GitHub API 限流，也避免旧版误拿 latest 签名。
     format!(
-        "https://github.com/Chunyu33/light-c/releases/download/v{}/{}",
+        "https://github.com/RobustLuo/light-c/releases/download/v{}/{}",
         app_version, asset_name
     )
 }
@@ -206,7 +206,7 @@ fn verify_exe_signatures(
 
     if !invalid_errors.is_empty() {
         return Err(VerifyError::InvalidSignature(format!(
-            "当前 LightC.exe 未匹配到该版本的官方 exe 签名资产。可能是文件来源不一致、文件被修改，或 Release 签名资产需要修复：{}",
+            "当前 LuoScope.exe 未匹配到该版本的官方 exe 签名资产。可能是文件来源不一致、文件被修改，或 Release 签名资产需要修复：{}",
             invalid_errors.join("；")
         )));
     }
@@ -229,7 +229,7 @@ fn verify_exe_signature(exe_bytes: &[u8], signature_text: &str) -> Result<(), Ve
     public_key
         .verify(exe_bytes, &signature, true)
         .map_err(|error| {
-            VerifyError::InvalidSignature(format!("签名与当前 LightC.exe 不一致：{}", error))
+            VerifyError::InvalidSignature(format!("签名与当前 LuoScope.exe 不一致：{}", error))
         })
 }
 
@@ -304,7 +304,7 @@ enum VerifyError {
 mod tests {
     use super::*;
 
-    const SAMPLE_MINISIGN_TEXT: &str = "untrusted comment: signature from tauri secret key\nRUQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\ntrusted comment: timestamp:1782718516\tfile:LightC.exe\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n";
+    const SAMPLE_MINISIGN_TEXT: &str = "untrusted comment: signature from tauri secret key\nRUQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\ntrusted comment: timestamp:1782718516\tfile:LuoScope.exe\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n";
 
     #[test]
     fn normalize_signature_text_accepts_raw_minisign_text() {

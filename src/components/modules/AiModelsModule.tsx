@@ -17,11 +17,15 @@ import { listen } from '@tauri-apps/api/event';
 import { ModuleCard } from '../ModuleCard';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { EmptyState } from '../EmptyState';
+import { EmptyScanAction } from '../EmptyScanAction';
+import { ModulePageContent } from '../ModulePageContent';
+import { ModuleScanPanel } from '../ModuleScanPanel';
 import { useToast } from '../Toast';
 import { DonutChart, ColumnChart, CHART_PALETTE, type ChartItem } from '../ui/charts';
 import { Select, type SelectOption } from '../ui/Select';
 import { useModuleDashboard } from '../../contexts/DashboardContext';
 import { shouldSkipInactivePageRender, type ModuleRenderProps } from './moduleProps';
+import { useOneClickScanListener } from '../../hooks/useOneClickScanListener';
 import {
   deleteAiModel,
   getFailureReasonMessage,
@@ -34,8 +38,10 @@ import {
 } from '../../api/commands';
 import { formatSize } from '../../utils/format';
 import { openSearchUrl } from '../../utils/searchEngine';
+import { readMigratedStorageItem } from '../../utils/storageMigration';
 
-const DEEP_DISCOVERY_STORAGE_KEY = 'lightc.aiModels.deepDiscovery';
+const DEEP_DISCOVERY_STORAGE_KEY = 'luoscope.aiModels.deepDiscovery';
+const LEGACY_DEEP_DISCOVERY_KEYS = ['lightc.aiModels.deepDiscovery'];
 const LARGE_MODEL_THRESHOLD = 20 * 1024 * 1024 * 1024;
 
 type AiModelViewMode = 'overview' | 'models';
@@ -51,11 +57,10 @@ interface DisplayModelName {
 }
 
 export function AiModelsModule({ layoutMode = 'cards', isPageActive = true }: ModuleRenderProps) {
-  const { moduleState, expandedModule, setExpandedModule, updateModuleState, oneClickScanTrigger } = useModuleDashboard('aiModels');
+  const { moduleState, expandedModule, setExpandedModule, updateModuleState } = useModuleDashboard('aiModels');
   const { showToast } = useToast();
 
   const scanningRef = useRef(false);
-  const lastScanTriggerRef = useRef(0);
 
   const [scanResult, setScanResult] = useState<AiModelScanResult | null>(null);
   const [enableDeepDiscovery, setEnableDeepDiscovery] = useState(() => loadDeepDiscovery());
@@ -122,12 +127,7 @@ export function AiModelsModule({ layoutMode = 'cards', isPageActive = true }: Mo
     }
   }, [enableDeepDiscovery, setExpandedModule, showToast, updateModuleState]);
 
-  useEffect(() => {
-    if (oneClickScanTrigger > 0 && oneClickScanTrigger !== lastScanTriggerRef.current) {
-      lastScanTriggerRef.current = oneClickScanTrigger;
-      handleScan();
-    }
-  }, [handleScan, oneClickScanTrigger]);
+  useOneClickScanListener('aiModels', handleScan);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -236,40 +236,49 @@ export function AiModelsModule({ layoutMode = 'cards', isPageActive = true }: Mo
         </div>
       }
     >
-      <div className="p-5 space-y-5">
-        {moduleState.status === 'idle' && !scanResult && (
+      {moduleState.status === 'idle' && !scanResult ? (
+        <ModulePageContent layoutMode={layoutMode} centerIdle>
           <EmptyState
+            page={layoutMode === 'pages'}
             icon={BrainCircuit}
             title="尚未分析 AI 资产"
-            description="点击开始分析，快速检测 Ollama、LM Studio、ComfyUI、HuggingFace；找不到模型时再开启深度发现。"
-            action={
-              <button
-                onClick={handleScan}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--brand-green)] text-white text-sm font-semibold hover:bg-[var(--brand-green-hover)] transition"
-              >
-                <Search className="w-4 h-4" />
-                开始分析
-              </button>
-            }
+            description="快速检测 Ollama、LM Studio、ComfyUI、HuggingFace；找不到模型时再开启深度发现。"
+            action={<EmptyScanAction onClick={handleScan} label="开始分析" />}
           />
-        )}
-
+        </ModulePageContent>
+      ) : (
+        <div className={layoutMode === 'pages' ? 'module-page-content module-page-content--filled' : 'p-5 space-y-5'}>
         {isScanning && (
-          <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] p-6 text-center">
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand-green)]/10">
-              <Loader2 className="h-7 w-7 animate-spin text-[var(--brand-green)]" />
-            </div>
-            <p className="text-sm font-semibold text-[var(--text-primary)]">
-              {scanProgress?.message ?? (enableDeepDiscovery ? '正在深度发现 AI 模型...' : '正在快速检测 AI 模型...')}
-            </p>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              {scanProgress
-                ? `当前阶段 ${formatDuration(scanProgress.stage_elapsed_ms)} · 总耗时 ${formatDuration(scanProgress.elapsed_ms)}`
+          <ModuleScanPanel
+            icon={BrainCircuit}
+            title={
+              scanProgress?.message ??
+              (enableDeepDiscovery ? '正在深度发现 AI 模型' : '正在快速检测 AI 模型')
+            }
+            description={
+              scanProgress
+                ? undefined
                 : enableDeepDiscovery
-                ? '正在用 MFT 扫描本地 NTFS 盘的大模型特征文件，并跳过已识别平台路径。'
-                : '只扫描已知平台目录和你添加的目录，不会启动全盘扫描。'}
-            </p>
-          </div>
+                  ? '正在用 MFT 扫描本地 NTFS 盘的大模型特征文件，并跳过已识别平台路径。'
+                  : '只扫描已知平台目录和你添加的目录，不会启动全盘扫描。'
+            }
+            backend={enableDeepDiscovery ? 'mft' : undefined}
+            stats={
+              scanProgress
+                ? [
+                    {
+                      label: '当前阶段',
+                      value: formatDuration(scanProgress.stage_elapsed_ms),
+                    },
+                    {
+                      label: '总耗时',
+                      value: formatDuration(scanProgress.elapsed_ms),
+                    },
+                  ]
+                : undefined
+            }
+            padded={false}
+          />
         )}
 
         {scanResult && !isScanning && (
@@ -336,6 +345,7 @@ export function AiModelsModule({ layoutMode = 'cards', isPageActive = true }: Mo
           </>
         )}
       </div>
+      )}
       </ModuleCard>
 
       <ConfirmDialog
@@ -347,7 +357,7 @@ export function AiModelsModule({ layoutMode = 'cards', isPageActive = true }: Mo
           ? `将永久删除“${modelPendingDeletion.name}”，文件大小约 ${formatSize(modelPendingDeletion.size)}。`
           : ''}
         warning={modelPendingDeletion
-          ? `路径：${modelPendingDeletion.path}。删除后无法通过 LightC 恢复，请确认该文件不是正在使用的模型。`
+          ? `路径：${modelPendingDeletion.path}。删除后无法通过 LuoScope 恢复，请确认该文件不是正在使用的模型。`
           : undefined}
         confirmText="确认删除"
         cancelText="取消"
@@ -1072,7 +1082,9 @@ function formatDuration(durationMs: number): string {
 function loadDeepDiscovery(): boolean {
   try {
     // 本地存储可能被用户或旧版本写入异常内容，读取时只接受明确的 true。
-    return JSON.parse(localStorage.getItem(DEEP_DISCOVERY_STORAGE_KEY) ?? 'false') === true;
+    return JSON.parse(
+      readMigratedStorageItem(DEEP_DISCOVERY_STORAGE_KEY, LEGACY_DEEP_DISCOVERY_KEYS) ?? 'false',
+    ) === true;
   } catch {
     return false;
   }

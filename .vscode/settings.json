@@ -1,0 +1,9 @@
+{
+  "terminal.integrated.env.windows": {
+    "CARGO_TARGET_DIR": "D:\\DevCache\\LuoScope\\cargo-target",
+    "CARGO_HOME": "D:\\DevCache\\LuoScope\\cargo-home",
+    "NPM_CONFIG_CACHE": "D:\\DevCache\\LuoScope\\npm-cache",
+    "TMP": "D:\\DevCache\\LuoScope\\temp",
+    "TEMP": "D:\\DevCache\\LuoScope\\temp"
+  }
+}

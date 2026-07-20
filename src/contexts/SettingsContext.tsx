@@ -4,6 +4,14 @@
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import { APP_MODULE_META, DEFAULT_ACTIVE_MODULE_ID, type AppModuleId, type LayoutMode } from '../config/moduleMeta';
+import { readMigratedStorageItem } from '../utils/storageMigration';
+import {
+  DEFAULT_ONE_CLICK_SCAN_MODULES,
+  normalizeOneClickScanModules,
+  type OneClickScanModules,
+} from '../utils/oneClickScan';
+
+export type { OneClickScanModules };
 
 /** 应用设置 */
 interface AppSettings {
@@ -23,6 +31,10 @@ interface AppSettings {
   diskGrowthMaxEntries: number;
   /** 清理日志最多保留文件数（默认 10） */
   cleanupLogRetention: number;
+  /** 启动时若未检测到管理员权限，自动弹出 UAC 请求提权重启（默认 false，需用户主动开启） */
+  autoRequestAdminOnStartup: boolean;
+  /** 一键扫描时参与扫描的模块；旧版未配置时默认全部启用以保持兼容 */
+  oneClickScanModules: OneClickScanModules;
 }
 
 interface SettingsContextValue {
@@ -34,7 +46,8 @@ interface SettingsContextValue {
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 
-const STORAGE_KEY = 'c-cleanup-settings';
+const STORAGE_KEY = 'luoscope-settings';
+const LEGACY_STORAGE_KEYS = ['c-cleanup-settings'];
 const moduleIds = APP_MODULE_META.map(module => module.id);
 
 /** 默认设置 */
@@ -47,10 +60,18 @@ const defaultSettings: AppSettings = {
   bigFilesScanLimit: 50, // 默认扫描 50 个大文件，避免初次结果列表过长
   diskGrowthMaxEntries: 300, // 默认最多展示 300 个变化目录
   cleanupLogRetention: 10, // 默认保留 10 份清理日志，兼容历史行为
+  autoRequestAdminOnStartup: false, // 默认不自动弹 UAC，避免普通用户每次启动都被打断
+  oneClickScanModules: DEFAULT_ONE_CLICK_SCAN_MODULES,
 };
 
-function normalizeSettings(settings: AppSettings): AppSettings {
-  const layoutMode: LayoutMode = settings.layoutMode === 'pages' ? 'pages' : 'cards';
+function normalizeLayoutMode(value: unknown): LayoutMode {
+  if (value === 'split') return 'split';
+  if (value === 'pages') return 'pages';
+  return 'cards';
+}
+
+function normalizeSettings(settings: AppSettings, legacyOneClickAllEnabled = false): AppSettings {
+  const layoutMode = normalizeLayoutMode(settings.layoutMode);
   const activeModuleId = moduleIds.includes(settings.activeModuleId)
     ? settings.activeModuleId
     : DEFAULT_ACTIVE_MODULE_ID;
@@ -66,6 +87,8 @@ function normalizeSettings(settings: AppSettings): AppSettings {
     bigFilesScanLimit: Math.min(500, Math.max(10, Math.floor(Number(settings.bigFilesScanLimit) || defaultSettings.bigFilesScanLimit))),
     diskGrowthMaxEntries: Math.min(1000, Math.max(50, Number(settings.diskGrowthMaxEntries) || defaultSettings.diskGrowthMaxEntries)),
     cleanupLogRetention: Math.min(100, Math.max(1, Math.floor(Number(settings.cleanupLogRetention) || defaultSettings.cleanupLogRetention))),
+    autoRequestAdminOnStartup: Boolean(settings.autoRequestAdminOnStartup),
+    oneClickScanModules: normalizeOneClickScanModules(settings.oneClickScanModules, legacyOneClickAllEnabled),
   };
 }
 
@@ -78,9 +101,12 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
   const [settings, setSettings] = useState<AppSettings>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const saved = readMigratedStorageItem(STORAGE_KEY, LEGACY_STORAGE_KEYS);
         if (saved) {
-          return normalizeSettings({ ...defaultSettings, ...JSON.parse(saved) });
+          const parsed = JSON.parse(saved) as Partial<AppSettings>;
+          // 旧版 localStorage 没有 oneClickScanModules 时，保持全部模块参与一键扫描
+          const legacyOneClickAllEnabled = parsed.oneClickScanModules === undefined;
+          return normalizeSettings({ ...defaultSettings, ...parsed }, legacyOneClickAllEnabled);
         }
       } catch (e) {
         console.error('读取设置失败:', e);
@@ -92,7 +118,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
   // 更新设置
   const updateSettings = useCallback((updates: Partial<AppSettings>) => {
     setSettings(prev => {
-      const newSettings = normalizeSettings({ ...prev, ...updates });
+      const newSettings = normalizeSettings({ ...prev, ...updates }, false);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newSettings));
       return newSettings;
     });

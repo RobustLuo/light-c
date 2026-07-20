@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { readMigratedStorageItem } from '../utils/storageMigration';
 
 /** 字体大小档位 */
 export type FontSizeLevel = 'standard' | 'medium' | 'large' | 'custom';
@@ -39,8 +40,10 @@ interface FontSizeContextValue {
 
 const FontSizeContext = createContext<FontSizeContextValue | null>(null);
 
-const STORAGE_KEY = 'c-cleanup-font-size';
-const CUSTOM_SIZE_STORAGE_KEY = 'c-cleanup-custom-font-size';
+const STORAGE_KEY = 'luoscope-font-size';
+const LEGACY_STORAGE_KEYS = ['c-cleanup-font-size'];
+const CUSTOM_SIZE_STORAGE_KEY = 'luoscope-custom-font-size';
+const LEGACY_CUSTOM_SIZE_STORAGE_KEYS = ['c-cleanup-custom-font-size'];
 
 interface FontSizeProviderProps {
   children: ReactNode;
@@ -50,7 +53,7 @@ export function FontSizeProvider({ children }: FontSizeProviderProps) {
   // 从 localStorage 读取保存的字体大小档位
   const [level, setLevelState] = useState<FontSizeLevel>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = readMigratedStorageItem(STORAGE_KEY, LEGACY_STORAGE_KEYS);
       if (saved === 'standard' || saved === 'medium' || saved === 'large' || saved === 'custom') {
         return saved;
       }
@@ -59,7 +62,10 @@ export function FontSizeProvider({ children }: FontSizeProviderProps) {
   });
   const [customFontSize, setCustomFontSizeState] = useState<number>(() => {
     if (typeof window !== 'undefined') {
-      const savedValue = localStorage.getItem(CUSTOM_SIZE_STORAGE_KEY);
+      const savedValue = readMigratedStorageItem(
+        CUSTOM_SIZE_STORAGE_KEY,
+        LEGACY_CUSTOM_SIZE_STORAGE_KEYS,
+      );
       const savedSize = Number(savedValue);
       if (savedValue !== null && Number.isFinite(savedSize)) {
         return Math.min(CUSTOM_FONT_SIZE_MAX, Math.max(CUSTOM_FONT_SIZE_MIN, Math.round(savedSize)));

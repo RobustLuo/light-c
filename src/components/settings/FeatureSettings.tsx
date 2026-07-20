@@ -3,9 +3,11 @@
 // ============================================================================
 
 import { useEffect, useState } from 'react';
-import { FileBox, HardDrive, Shield } from 'lucide-react';
+import { FileBox, HardDrive, Shield, Zap } from 'lucide-react';
+import { APP_MODULE_META, type AppModuleId } from '../../config/moduleMeta';
 import { Select, type SelectOption } from '../ui/Select';
 import { useSettings } from '../../contexts';
+import { DEFAULT_ONE_CLICK_SCAN_MODULES } from '../../utils/oneClickScan';
 
 const DEPTH_OPTIONS: SelectOption<string>[] = [
   { value: '2', label: '2 层' },
@@ -40,13 +42,83 @@ export function FeatureSettings() {
 
   return (
     <div className="flex flex-col w-0 min-w-full space-y-4 pb-2">
+      {/* 一键扫描范围 */}
+      <div className="space-y-3">
+        <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-2">
+          <Zap className="w-3.5 h-3.5" />
+          一键扫描
+        </h4>
+        <div className="settings-panel p-5 space-y-4">
+          <div>
+            <p className="text-sm font-medium text-[var(--text-primary)]">参与扫描的模块</p>
+            <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
+              顶栏「一键扫描」只会启动已勾选的模块。默认启用轻量扫描；磁盘变化、AI 模型等较重任务建议按需勾选。
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {APP_MODULE_META.map((module) => {
+              const ModuleIcon = module.icon;
+              const enabled = settings.oneClickScanModules[module.id];
+              return (
+                <label
+                  key={module.id}
+                  className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 transition-colors ${
+                    enabled
+                      ? 'border-[var(--brand-green-20)] bg-[var(--brand-green-10)]'
+                      : 'border-[var(--border-color)] bg-[var(--bg-main)] hover:bg-[var(--bg-hover)]'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    onChange={() => {
+                      updateSettings({
+                        oneClickScanModules: {
+                          ...settings.oneClickScanModules,
+                          [module.id]: !enabled,
+                        },
+                      });
+                    }}
+                    className="h-3.5 w-3.5 rounded border-[var(--border-color)] text-[var(--brand-green)] focus:ring-[var(--brand-green)]"
+                  />
+                  <ModuleIcon className="h-3.5 w-3.5 shrink-0 text-[var(--brand-green)]" />
+                  <span className="text-xs font-medium text-[var(--text-primary)]">{module.label}</span>
+                </label>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                updateSettings({
+                  oneClickScanModules: Object.fromEntries(
+                    APP_MODULE_META.map((module) => [module.id, true]),
+                  ) as Record<AppModuleId, boolean>,
+                });
+              }}
+              className="rounded-lg border border-[var(--border-color)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+            >
+              全选
+            </button>
+            <button
+              type="button"
+              onClick={() => updateSettings({ oneClickScanModules: DEFAULT_ONE_CLICK_SCAN_MODULES })}
+              className="rounded-lg border border-[var(--border-color)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+            >
+              恢复推荐
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* 大文件清理 */}
       <div className="space-y-3">
         <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-2">
           <FileBox className="w-3.5 h-3.5" />
           大文件清理
         </h4>
-        <div className="bg-[var(--bg-main)] rounded-2xl p-5 space-y-4">
+        <div className="settings-panel p-5 space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-[var(--text-primary)]">扫描文件数</p>
@@ -85,7 +157,7 @@ export function FeatureSettings() {
           <HardDrive className="w-3.5 h-3.5" />
           大目录分析
         </h4>
-        <div className="bg-[var(--bg-main)] rounded-2xl p-5 space-y-6">
+        <div className="settings-panel p-5 space-y-6">
           {/* 展示深度 — 下拉选择，最大 4 层（实际扫描固定 6 层） */}
           <div className="flex items-center justify-between">
             <div>
@@ -197,7 +269,7 @@ export function FeatureSettings() {
           <HardDrive className="w-3.5 h-3.5" />
           磁盘变化分析
         </h4>
-        <div className="bg-[var(--bg-main)] rounded-2xl p-5 space-y-4">
+        <div className="settings-panel p-5 space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-[var(--text-primary)]">最多展示变化目录</p>

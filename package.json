@@ -1,20 +1,22 @@
 {
-  "name": "light-c",
+  "name": "luo-scope",
   "private": true,
-  "version": "2.12.2",
+  "version": "2.12.3",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
   "author": {
-    "name": "Evan Lau",
-    "email": "liucygm33@gmail.com",
-    "url": "https://evansapce.icu"
+    "name": "RobustLuo",
+    "url": "https://github.com/RobustLuo"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "tauri": "tauri",
-    "gen-nsis-assets": "node scripts/gen-nsis-assets.js"
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/with-dev-cache.ps1 dev",
+    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/with-dev-cache.ps1 build",
+    "preview": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/with-dev-cache.ps1 preview",
+    "tauri": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/with-dev-cache.ps1 tauri",
+    "setup:cache": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-d-drive-cache.ps1",
+    "setup:signing-key": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-signing-key.ps1",
+    "gen-nsis-assets": "node scripts/gen-nsis-assets.js",
+    "gen-icons": "node scripts/generate-icons.js && node scripts/generate-ico.js"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.20",

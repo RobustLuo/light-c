@@ -2,7 +2,7 @@
 // 设置页面共享配置
 // ============================================================================
 
-import { BookOpen, HardDrive, Info, LayoutGrid, MessageSquare, Monitor, Moon, PanelLeft, Settings, ShieldCheck, SlidersHorizontal, Sun, type LucideIcon } from 'lucide-react';
+import { BookOpen, Columns2, HardDrive, Info, LayoutGrid, MessageSquare, Monitor, Moon, PanelLeft, Settings, ShieldCheck, SlidersHorizontal, Sun, type LucideIcon } from 'lucide-react';
 import { FONT_SIZE_CONFIGS, type FontSizeLevel, type ThemeMode } from '../../contexts';
 import type { SettingsTabDefinition } from './types';
 
@@ -32,6 +32,7 @@ export const FONT_SIZE_OPTIONS: { level: FontSizeLevel; label: string }[] = [
 export const LAYOUT_MODE_OPTIONS = [
   { mode: 'cards' as const, label: '卡片模式', icon: LayoutGrid, description: '所有功能集中在同一页，适合快速总览' },
   { mode: 'pages' as const, label: '页面模式', icon: PanelLeft, description: '左侧菜单切换单功能页，更接近传统 PC 软件' },
+  { mode: 'split' as const, label: '分栏模式', icon: Columns2, description: '左侧模块状态列表 + 右侧专注操作，适合逐项清理' },
 ];
 
 // 保留统一导出，页面组件只从一个配置入口读取字号提示所需配置。

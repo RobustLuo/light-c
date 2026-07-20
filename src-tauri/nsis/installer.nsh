@@ -1,5 +1,5 @@
 ; ============================================================================
-; LightC Custom NSIS Installer Script
+; LuoScope Custom NSIS Installer Script
 ; ============================================================================
 ; 此文件由 Tauri 的 installerScript 配置注入到主安装脚本中
 ; 用于自定义 MUI2 界面、压缩算法、多语言支持等
@@ -15,17 +15,17 @@ SetCompressorDictSize 64
 ; ============================================================================
 
 ; 品牌标题
-!define MUI_WELCOMEPAGE_TITLE "欢迎使用 LightC$\n轻量级 C 盘清理工具"
+!define MUI_WELCOMEPAGE_TITLE "欢迎使用 LuoScope$\nWindows 智能磁盘空间管理"
 !define MUI_WELCOMEPAGE_TITLE_3LINES
 
 ; 欢迎页文字
-!define MUI_WELCOMEPAGE_TEXT "LightC 是一款轻量级 Windows C 盘智能清理工具，帮助您快速释放磁盘空间、清理垃圾文件、优化系统性能。$\r$\n$\r$\n点击「下一步」继续安装。"
+!define MUI_WELCOMEPAGE_TEXT "LuoScope 是一款 Windows 智能磁盘空间管理工具，帮助您快速释放磁盘空间、清理垃圾文件、优化系统性能。$\r$\n$\r$\n点击「下一步」继续安装。"
 
 ; 完成页配置
 !define MUI_FINISHPAGE_TITLE "安装完成"
-!define MUI_FINISHPAGE_TEXT "LightC 已成功安装到您的计算机。$\r$\n$\r$\n点击「完成」退出安装向导。"
-!define MUI_FINISHPAGE_RUN "$INSTDIR\LightC.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "立即运行 LightC"
+!define MUI_FINISHPAGE_TEXT "LuoScope 已成功安装到您的计算机。$\r$\n$\r$\n点击「完成」退出安装向导。"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\LuoScope.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "立即运行 LuoScope"
 !define MUI_FINISHPAGE_RUN_CHECKED
 
 ; 桌面快捷方式选项
@@ -50,7 +50,7 @@ SetCompressorDictSize 64
 
 ; 界面风格
 !define MUI_ABORTWARNING
-!define MUI_ABORTWARNING_TEXT "确定要取消 LightC 的安装吗？"
+!define MUI_ABORTWARNING_TEXT "确定要取消 LuoScope 的安装吗？"
 
 ; ============================================================================
 ; 3. 多语言支持
@@ -59,11 +59,11 @@ SetCompressorDictSize 64
 !insertmacro MUI_LANGUAGE "English"
 
 ; 语言字符串
-LangString DESC_SecMain ${LANG_SIMPCHINESE} "LightC 主程序文件"
-LangString DESC_SecMain ${LANG_ENGLISH} "LightC main application files"
+LangString DESC_SecMain ${LANG_SIMPCHINESE} "LuoScope 主程序文件"
+LangString DESC_SecMain ${LANG_ENGLISH} "LuoScope main application files"
 
-LangString MSG_ALREADY_RUNNING ${LANG_SIMPCHINESE} "LightC 正在运行中，请先关闭程序后再继续安装。"
-LangString MSG_ALREADY_RUNNING ${LANG_ENGLISH} "LightC is currently running. Please close it before continuing."
+LangString MSG_ALREADY_RUNNING ${LANG_SIMPCHINESE} "LuoScope 正在运行中，请先关闭程序后再继续安装。"
+LangString MSG_ALREADY_RUNNING ${LANG_ENGLISH} "LuoScope is currently running. Please close it before continuing."
 
 ; ============================================================================
 ; 4. 自定义函数
@@ -75,12 +75,12 @@ Function CreateDesktopShortcut
     ${If} $UpdateMode = 1
         Return
     ${EndIf}
-    CreateShortCut "$DESKTOP\LightC.lnk" "$INSTDIR\LightC.exe" "" "$INSTDIR\LightC.exe" 0
+    CreateShortCut "$DESKTOP\LuoScope.lnk" "$INSTDIR\LuoScope.exe" "" "$INSTDIR\LuoScope.exe" 0
 FunctionEnd
 
 ; 检查程序是否正在运行
 Function CheckAppRunning
-    FindWindow $0 "" "LightC"
+    FindWindow $0 "" "LuoScope"
     StrCmp $0 0 notRunning
         MessageBox MB_OK|MB_ICONEXCLAMATION "$(MSG_ALREADY_RUNNING)"
         Abort
@@ -101,14 +101,14 @@ FunctionEnd
 ; ============================================================================
 
 ; 卸载欢迎页
-!define MUI_UNCONFIRMPAGE_TEXT_TOP "即将从您的计算机中卸载 LightC。$\r$\n$\r$\n卸载前请确保 LightC 已关闭。"
+!define MUI_UNCONFIRMPAGE_TEXT_TOP "即将从您的计算机中卸载 LuoScope。$\r$\n$\r$\n卸载前请确保 LuoScope 已关闭。"
 
 ; 卸载完成页
 !define MUI_UNFINISHPAGE_NOAUTOCLOSE
 
 ; 卸载前检查
 Function un.onInit
-    FindWindow $0 "" "LightC"
+    FindWindow $0 "" "LuoScope"
     StrCmp $0 0 notRunning
         MessageBox MB_OK|MB_ICONEXCLAMATION "$(MSG_ALREADY_RUNNING)"
         Abort
@@ -121,5 +121,5 @@ Function un.onUninstSuccess
     ${If} $UpdateMode = 1
         Return
     ${EndIf}
-    Delete "$DESKTOP\LightC.lnk"
+    Delete "$DESKTOP\LuoScope.lnk"
 FunctionEnd

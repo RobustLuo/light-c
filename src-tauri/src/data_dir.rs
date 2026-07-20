@@ -1,12 +1,12 @@
 // ============================================================================
 // 统一数据目录管理模块
 //
-// 管理 LightC 所有本地持久化数据的存储目录，包括：
+// 管理 LuoScope 所有本地持久化数据的存储目录，包括：
 //   - 清理日志 (logs/)
 //   - 安装历史缓存 (install_history.json)
 //   - ProgramData 快照
 //
-// 安装版配置固定存储在 %LOCALAPPDATA%/LightC/config/config.json，
+// 安装版配置固定存储在 %LOCALAPPDATA%/LuoScope/config/config.json，
 // 便携版配置和默认数据跟随 exe 存储，避免便携包仍然依赖 AppData。
 // 允许用户通过 UI 自定义数据目录路径。更改时自动迁移已有数据。
 // ============================================================================
@@ -21,7 +21,7 @@ use log;
 
 use crate::runtime::{
     current_application_root, current_executable_path, detect_distribution_channel,
-    portable_webview_data_directory, DistributionChannel,
+    installer_webview_data_directory, portable_webview_data_directory, DistributionChannel,
 };
 
 // ============================================================================
@@ -29,7 +29,9 @@ use crate::runtime::{
 // ============================================================================
 
 /// 基于 LOCALAPPDATA 的应用根目录名，配置和默认数据会在此目录下分区存放。
-const APP_ROOT_DIR_NAME: &str = "LightC";
+const APP_ROOT_DIR_NAME: &str = "LuoScope";
+/// 更名前的 AppData 根目录，用于读取旧配置与迁移数据。
+const LEGACY_APP_ROOT_DIR_NAME: &str = "LightC";
 
 /// 默认数据目录子目录名，避免把 config.json 和日志/快照等运行数据放在同一层级。
 const DEFAULT_DATA_DIR_NAME: &str = "data";
@@ -44,7 +46,7 @@ const CONFIG_FILE: &str = "config.json";
 const PORTABLE_MIGRATION_DIR: &str = ".migration";
 const PORTABLE_MIGRATION_STATE_FILE: &str = "legacy_appdata_v1.json";
 
-/// 迁移数据目录时只复制 LightC 明确拥有的数据，避免用户误选磁盘根目录后把无关文件继续带到新位置。
+/// 迁移数据目录时只复制 LuoScope 明确拥有的数据，避免用户误选磁盘根目录后把无关文件继续带到新位置。
 const MIGRATABLE_DATA_ENTRIES: [&str; 5] = [
     "install_history.json",
     "logs",
@@ -179,9 +181,14 @@ const CLEARABLE_DATA_DEFINITIONS: [ClearableDataDefinition; 4] = [
 // 内部函数
 // ============================================================================
 
-/// 安装版应用本机根目录（%LOCALAPPDATA%/LightC），作为旧版数据迁移源。
+/// 安装版应用本机根目录（%LOCALAPPDATA%/LuoScope）。
 fn app_local_root_dir() -> Option<PathBuf> {
     dirs::data_local_dir().map(|dir| dir.join(APP_ROOT_DIR_NAME))
+}
+
+/// 更名前的 AppData 根目录（%LOCALAPPDATA%/LightC），作为数据迁移源。
+fn legacy_app_local_root_dir() -> Option<PathBuf> {
+    dirs::data_local_dir().map(|dir| dir.join(LEGACY_APP_ROOT_DIR_NAME))
 }
 
 /// 当前发行包的存储根目录；便携版必须以 exe 所在目录为根。
@@ -199,9 +206,17 @@ fn config_file_path() -> Option<PathBuf> {
     storage_root_dir().map(|dir| dir.join(CONFIG_DIR_NAME).join(CONFIG_FILE))
 }
 
-/// 旧版本曾把配置放在 %LOCALAPPDATA%/LightC/config.json，初始化时需要兼容读取。
-fn legacy_config_file_path() -> Option<PathBuf> {
-    app_local_root_dir().map(|dir| dir.join(CONFIG_FILE))
+/// 旧版本曾把配置放在 %LOCALAPPDATA%/LightC 或 LuoScope 根目录，初始化时需要兼容读取。
+fn legacy_config_file_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(legacy_root) = legacy_app_local_root_dir() {
+        paths.push(legacy_root.join(CONFIG_DIR_NAME).join(CONFIG_FILE));
+        paths.push(legacy_root.join(CONFIG_FILE));
+    }
+    if let Some(current_root) = app_local_root_dir() {
+        paths.push(current_root.join(CONFIG_FILE));
+    }
+    paths
 }
 
 /// 加载配置或创建默认配置
@@ -267,9 +282,13 @@ fn load_existing_config() -> Option<(DataDirConfig, bool)> {
         return None;
     }
 
-    legacy_config_file_path()
-        .and_then(|config_path| read_config_file(&config_path))
-        .map(|config| (config, true))
+    for config_path in legacy_config_file_paths() {
+        if let Some(config) = read_config_file(&config_path) {
+            return Some((config, true));
+        }
+    }
+
+    None
 }
 
 fn read_config_file(path: &Path) -> Option<DataDirConfig> {
@@ -282,6 +301,27 @@ fn read_config_file(path: &Path) -> Option<DataDirConfig> {
             None
         }
     }
+}
+
+/// 判断配置中的路径是否仍指向更名前或默认 AppData 根目录。
+fn configured_path_points_to_legacy_app_data(
+    configured_path: &Path,
+    channel: DistributionChannel,
+) -> bool {
+    let legacy_roots = [app_local_root_dir(), legacy_app_local_root_dir()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
+    legacy_roots.iter().any(|legacy_root| {
+        if channel == DistributionChannel::Portable {
+            let legacy_default = legacy_root.join(DEFAULT_DATA_DIR_NAME);
+            path_compare_key(configured_path) == path_compare_key(legacy_root)
+                || path_compare_key(configured_path) == path_compare_key(&legacy_default)
+        } else {
+            path_compare_key(configured_path) == path_compare_key(legacy_root)
+        }
+    })
 }
 
 /// 将旧版默认路径转换为当前发行包的默认路径。
@@ -309,17 +349,7 @@ fn resolve_configured_data_dir(
         return (default_data_dir.to_path_buf(), true);
     }
 
-    let Some(legacy_root) = app_local_root_dir() else {
-        return (configured_path, false);
-    };
-
-    let is_legacy_default = if channel == DistributionChannel::Portable {
-        let legacy_default = legacy_root.join(DEFAULT_DATA_DIR_NAME);
-        path_compare_key(&configured_path) == path_compare_key(&legacy_root)
-            || path_compare_key(&configured_path) == path_compare_key(&legacy_default)
-    } else {
-        path_compare_key(&configured_path) == path_compare_key(&legacy_root)
-    };
+    let is_legacy_default = configured_path_points_to_legacy_app_data(&configured_path, channel);
 
     if is_legacy_default {
         (default_data_dir.to_path_buf(), true)
@@ -342,7 +372,7 @@ fn normalize_legacy_default_data_dir_inner(
 }
 
 fn migrate_legacy_default_data_if_needed(default_data_dir: &Path) {
-    let Some(legacy_root) = app_local_root_dir() else {
+    let Some(legacy_root) = legacy_app_local_root_dir() else {
         return;
     };
 
@@ -350,7 +380,7 @@ fn migrate_legacy_default_data_if_needed(default_data_dir: &Path) {
         return;
     }
 
-    // 这里只迁移 LightC 明确拥有的数据项，避免把 config、config 目录或用户误放的文件复制进默认数据目录。
+    // 这里只迁移 LuoScope 明确拥有的数据项，避免把 config、config 目录或用户误放的文件复制进默认数据目录。
     if legacy_root.is_dir() {
         if let Err(error) = migrate_owned_data_entries(&legacy_root, default_data_dir) {
             log::warn!(
@@ -365,7 +395,7 @@ fn migrate_legacy_default_data_if_needed(default_data_dir: &Path) {
 
 /// 将旧版 AppData 中的白名单数据复制到当前默认目录，源文件始终保留。
 fn migrate_legacy_data_to_default(default_data_dir: &Path, channel: DistributionChannel) {
-    let Some(legacy_root) = app_local_root_dir() else {
+    let Some(legacy_root) = legacy_app_local_root_dir() else {
         return;
     };
 
@@ -383,7 +413,7 @@ fn migrate_legacy_data_to_default(default_data_dir: &Path, channel: Distribution
     }
 }
 
-/// 旧版便携程序实际把数据写在 AppData；新版本只复制明确属于 LightC 的内容。
+/// 旧版便携程序实际把数据写在 AppData；新版本只复制明确属于 LuoScope 的内容。
 fn migrate_legacy_portable_data_inner(
     legacy_root: &Path,
     portable_data_dir: &Path,
@@ -427,7 +457,7 @@ fn migrate_legacy_portable_config_if_needed() {
         return;
     }
 
-    let Some(legacy_root) = app_local_root_dir() else {
+    let Some(legacy_root) = legacy_app_local_root_dir() else {
         return;
     };
     let candidates = [
@@ -568,7 +598,7 @@ fn ensure_migration_target_is_safe(old_path: &Path, new_path: &Path) -> Result<(
     }
 
     if new_path.exists() && !is_directory_empty(new_path)? {
-        return Err("新的数据目录必须是空文件夹，避免把非 LightC 数据混入迁移流程。".to_string());
+        return Err("新的数据目录必须是空文件夹，避免把非 LuoScope 数据混入迁移流程。".to_string());
     }
 
     Ok(())
@@ -645,7 +675,7 @@ pub fn get_storage_location_info() -> StorageLocationInfo {
     let config_file = config_directory.join(CONFIG_FILE);
     let default_data_directory = get_default_dir();
     let current_data_directory = get_data_dir();
-    let legacy_root = app_local_root_dir();
+    let legacy_root = legacy_app_local_root_dir();
     let migration_state_path = default_data_directory
         .join(PORTABLE_MIGRATION_DIR)
         .join(PORTABLE_MIGRATION_STATE_FILE);
@@ -668,6 +698,7 @@ pub fn get_storage_location_info() -> StorageLocationInfo {
         portable_root: (channel == DistributionChannel::Portable)
             .then(|| storage_root.to_string_lossy().to_string()),
         webview_data_directory: portable_webview_data_directory()
+            .or_else(installer_webview_data_directory)
             .map(|path| path.to_string_lossy().to_string()),
         legacy_data_directory: (channel == DistributionChannel::Portable)
             .then(|| {
@@ -689,7 +720,7 @@ pub fn migrate_legacy_portable_data() -> Result<StorageLocationInfo, String> {
     }
 
     let legacy_root =
-        app_local_root_dir().ok_or_else(|| "无法确定旧版 AppData 数据目录。".to_string())?;
+        legacy_app_local_root_dir().ok_or_else(|| "无法确定旧版 AppData 数据目录。".to_string())?;
     let default_data_directory = get_default_dir();
     migrate_legacy_portable_data_inner(&legacy_root, &default_data_directory)?;
     Ok(get_storage_location_info())
@@ -1188,8 +1219,8 @@ mod tests {
         let config_path = config_file_path().expect("config path should be available");
         let default_dir = default_data_dir().expect("default data dir should be available");
 
-        assert!(path_compare_key(&config_path).contains("\\lightc\\config\\config.json"));
-        assert!(path_compare_key(&default_dir).ends_with("\\lightc\\data"));
+        assert!(path_compare_key(&config_path).contains("\\luoscope\\config\\config.json"));
+        assert!(path_compare_key(&default_dir).ends_with("\\luoscope\\data"));
     }
 
     #[test]
@@ -1208,7 +1239,7 @@ mod tests {
 
     #[test]
     fn portable_relative_config_follows_current_default_directory() {
-        let default_dir = PathBuf::from(r"D:\LightC\data");
+        let default_dir = PathBuf::from(r"D:\LuoScope\data");
         let config = DataDirConfig {
             data_dir: DEFAULT_DATA_DIR_NAME.to_string(),
             data_dir_mode: Some("relative".to_string()),
@@ -1223,8 +1254,8 @@ mod tests {
 
     #[test]
     fn portable_custom_config_remains_absolute() {
-        let default_dir = PathBuf::from(r"D:\LightC\data");
-        let custom_dir = PathBuf::from(r"E:\LightCData");
+        let default_dir = PathBuf::from(r"D:\LuoScope\data");
+        let custom_dir = PathBuf::from(r"E:\LuoScopeData");
         let config = DataDirConfig {
             data_dir: custom_dir.to_string_lossy().to_string(),
             data_dir_mode: None,
@@ -1240,7 +1271,7 @@ mod tests {
     #[test]
     fn rejects_nested_migration_target() {
         let old_path = Path::new(r"C:\Users\tester\AppData\Local\LightC");
-        let new_path = old_path.join("LightC_Data");
+        let new_path = Path::new(r"C:\Users\tester\AppData\Local\LuoScope\data");
 
         let result = ensure_migration_target_is_safe(old_path, &new_path);
 
@@ -1250,12 +1281,12 @@ mod tests {
     #[test]
     fn rejects_non_empty_migration_target() {
         let root =
-            std::env::temp_dir().join(format!("lightc-data-dir-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("luoscope-data-dir-test-{}", std::process::id()));
         let old_path = root.join("old");
         let new_path = root.join("new");
         fs::create_dir_all(&old_path).unwrap();
         fs::create_dir_all(&new_path).unwrap();
-        fs::write(new_path.join("other.txt"), "not lightc data").unwrap();
+        fs::write(new_path.join("other.txt"), "not luoscope data").unwrap();
 
         let result = ensure_migration_target_is_safe(&old_path, &new_path);
 
@@ -1266,7 +1297,7 @@ mod tests {
     #[test]
     fn migrates_only_owned_data_entries() {
         let root = std::env::temp_dir().join(format!(
-            "lightc-owned-migration-test-{}",
+            "luoscope-owned-migration-test-{}",
             std::process::id()
         ));
         let old_path = root.join("old");

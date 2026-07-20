@@ -1,0 +1,4 @@
+interface:
+  display_name: "LuoScope Release"
+  short_description: "Update LuoScope release docs and version files."
+  default_prompt: "Use this skill to prepare a LuoScope release: bump versions, update CHANGELOG, release.yml, README, and run validation."

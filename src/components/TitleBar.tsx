@@ -1,10 +1,12 @@
 // ============================================================================
-// 自定义标题栏组件
+// 自定义标题栏 — Aurora 玻璃材质
 // ============================================================================
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Copy, Minus, Square, X, Settings } from 'lucide-react';
+import { Copy, Minus, Settings, Square, X } from 'lucide-react';
+import { ThemeToggle } from './ThemeToggle';
+import { AppBrandLogo } from './AppBrandLogo';
 
 interface TitleBarProps {
   onSettingsClick: () => void;
@@ -19,13 +21,12 @@ export function TitleBar({ onSettingsClick }: TitleBarProps) {
   const appWindow = appWindowRef.current;
 
   const refreshMaximizedState = useCallback(() => {
-    appWindow.isMaximized().then(setIsMaximized).catch((err) => {
-      console.error('同步窗口最大化状态失败:', err);
+    appWindow.isMaximized().then(setIsMaximized).catch((error) => {
+      console.error('同步窗口最大化状态失败:', error);
     });
   }, [appWindow]);
 
   useEffect(() => {
-    // 初始化时检查窗口状态
     refreshMaximizedState();
 
     const unlisteners: Array<() => void> = [];
@@ -36,15 +37,17 @@ export function TitleBar({ onSettingsClick }: TitleBarProps) {
       appWindow.onMoved(refreshMaximizedState),
       appWindow.onScaleChanged(refreshMaximizedState),
       appWindow.onFocusChanged(refreshMaximizedState),
-    ]).then((items) => {
-      if (disposed) {
-        items.forEach((unlisten) => unlisten());
-        return;
-      }
-      unlisteners.push(...items);
-    }).catch((err) => {
-      console.error('监听窗口状态失败:', err);
-    });
+    ])
+      .then((items) => {
+        if (disposed) {
+          items.forEach((unlisten) => unlisten());
+          return;
+        }
+        unlisteners.push(...items);
+      })
+      .catch((error) => {
+        console.error('监听窗口状态失败:', error);
+      });
 
     return () => {
       disposed = true;
@@ -53,7 +56,7 @@ export function TitleBar({ onSettingsClick }: TitleBarProps) {
   }, [appWindow, refreshMaximizedState]);
 
   const handleMinimize = () => appWindow.minimize();
-  
+
   const handleMaximize = async () => {
     const maximized = await appWindow.isMaximized();
     if (maximized) {
@@ -73,7 +76,6 @@ export function TitleBar({ onSettingsClick }: TitleBarProps) {
 
   const handleTitleBarMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0 || event.detail > 1 || isWindowControl(event.target)) return;
-    // Windows 多显示器 DPI 不一致时，最大化窗口直接 startDragging 容易触发错误还原坐标。
     if (isMaximized) return;
     dragStartRef.current = { x: event.clientX, y: event.clientY };
   };
@@ -87,8 +89,8 @@ export function TitleBar({ onSettingsClick }: TitleBarProps) {
     if (distanceX < DRAG_START_THRESHOLD && distanceY < DRAG_START_THRESHOLD) return;
 
     dragStartRef.current = null;
-    appWindow.startDragging().catch((err) => {
-      console.error('拖动窗口失败:', err);
+    appWindow.startDragging().catch((error) => {
+      console.error('拖动窗口失败:', error);
     });
   };
 
@@ -104,68 +106,77 @@ export function TitleBar({ onSettingsClick }: TitleBarProps) {
   };
 
   return (
-    <div 
-      className="h-10 bg-[var(--bg-card)] border-b border-[var(--border-color)] flex items-center justify-between shrink-0 select-none"
+    <header
+      className="title-bar glass-panel"
       onDoubleClick={handleTitleBarDoubleClick}
       onMouseDown={handleTitleBarMouseDown}
       onMouseMove={handleTitleBarMouseMove}
       onMouseLeave={handleTitleBarMouseUp}
       onMouseUp={handleTitleBarMouseUp}
     >
-      {/* 左侧：应用图标和标题 - 使用主文字色 */}
-      <div className="flex items-center gap-2 px-3 h-full flex-1">
-        <div className="w-6 h-6 rounded-lg bg-[var(--brand-green)] flex items-center justify-center">
-          <span className="text-xs font-bold text-white">C:</span>
+      {/* 左侧品牌区：单行紧凑，避免副标题把顶栏撑高 */}
+      <div className="title-bar__brand">
+        <AppBrandLogo size="sm" />
+        <div className="title-bar__brand-copy">
+          <span className="title-bar__brand-name">LuoScope</span>
+          <span className="title-bar__brand-dot" aria-hidden />
+          <span className="title-bar__brand-tag">C 盘智能清理</span>
         </div>
-        <span className="text-sm font-semibold text-[var(--text-primary)]">LightC</span>
       </div>
 
-      {/* 右侧：设置 + 窗口控制按钮 - 极简风格 */}
-      <div className="flex items-center h-full">
-        {/* 设置按钮 - Ghost 风格 */}
-        <button
-          data-window-control
-          onClick={onSettingsClick}
-          className="h-full px-3 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
-          title="设置"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
+      {/* 中间留白供拖拽，不堆控件 */}
+      <div className="title-bar__drag" aria-hidden />
 
-        {/* 分隔线 */}
-        <div className="w-px h-4 bg-[var(--border-color)] mx-1" />
+      {/* 右侧：工具胶囊 + 窗口控件分组，层次更清晰 */}
+      <div className="title-bar__actions">
+        <div className="title-bar__toolbar" data-window-control>
+          <ThemeToggle variant="inline" />
+          <span className="title-bar__toolbar-divider" aria-hidden />
+          <button
+            type="button"
+            data-window-control
+            onClick={onSettingsClick}
+            className="title-bar__tool-btn"
+            title="设置"
+            aria-label="设置"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
+        </div>
 
-        {/* 最小化 */}
-        <button
-          data-window-control
-          onClick={handleMinimize}
-          className="h-full px-3 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
-          title="最小化"
-        >
-          <Minus className="w-4 h-4" />
-        </button>
-
-        {/* 最大化/还原 */}
-        <button
-          data-window-control
-          onClick={handleMaximize}
-          className="h-full px-3 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
-          title={isMaximized ? "还原" : "最大化"}
-        >
-          {/* 最大化后显示叠框图标，符合 Windows「还原窗口」的视觉习惯。 */}
-          {isMaximized ? <Copy className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
-        </button>
-
-        {/* 关闭 */}
-        <button
-          data-window-control
-          onClick={handleClose}
-          className="h-full px-3 flex items-center justify-center text-[var(--text-muted)] hover:bg-[var(--color-danger)] hover:text-white transition-colors"
-          title="关闭"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <div className="title-bar__window-group">
+          <button
+            type="button"
+            data-window-control
+            onClick={handleMinimize}
+            className="title-bar__window-btn"
+            title="最小化"
+            aria-label="最小化"
+          >
+            <Minus className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            data-window-control
+            onClick={handleMaximize}
+            className="title-bar__window-btn"
+            title={isMaximized ? '还原' : '最大化'}
+            aria-label={isMaximized ? '还原' : '最大化'}
+          >
+            {isMaximized ? <Copy className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            type="button"
+            data-window-control
+            onClick={handleClose}
+            className="title-bar__window-btn title-bar__window-btn--close"
+            title="关闭"
+            aria-label="关闭"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
-    </div>
+    </header>
   );
 }

@@ -1,11 +1,11 @@
-LightC Source Available License v1.0
+LuoScope Source Available License v1.0
 
-Copyright (c) 2026 Evan Lau.
+Copyright (c) 2026 RobustLuo.
 All rights reserved except as expressly granted under this License.
 
-This LightC Source Available License v1.0 (the "License") governs use of the
-LightC software, source code, object code, documentation, assets, build scripts,
-and related materials made available by Evan Lau (the "Licensor") under this
+This LuoScope Source Available License v1.0 (the "License") governs use of the
+LuoScope software, source code, object code, documentation, assets, build scripts,
+and related materials made available by RobustLuo (the "Licensor") under this
 License (collectively, the "Software").
 
 By accessing, copying, modifying, or using the Software, you accept this License.
@@ -23,8 +23,8 @@ limited, worldwide, royalty-free, non-exclusive, non-transferable license to:
     evaluation, or non-commercial development purposes;
 (d) create and maintain public or private forks of the Software solely for
     studying the Software, preparing changes, or submitting contributions to
-    the official LightC repository; and
-(e) submit patches, issues, and pull requests to the official LightC repository.
+    the official LuoScope repository; and
+(e) submit patches, issues, and pull requests to the official LuoScope repository.
 
 2. Restrictions
 
@@ -34,39 +34,39 @@ You may not, without the Licensor's prior written permission:
     or any modified version of the Software;
 (b) distribute, publish, release, or make available any modified version of the
     Software as a standalone product, competing product, renamed product, or
-    replacement for LightC;
+    replacement for LuoScope;
 (c) distribute compiled binaries, installers, portable packages, app bundles, or
     other executable forms of the Software or any modified version, except as
     part of a pull request or contribution workflow directed to the official
-    LightC repository;
+    LuoScope repository;
 (d) include the Software or any substantial portion of the Software in a
     commercial product, paid service, bundled offering, managed service, or
     proprietary distribution;
 (e) remove, alter, hide, or obscure copyright notices, license notices, author
     attribution, trademark notices, source attribution, or security and
     authenticity notices included with the Software;
-(f) use the names "LightC", "Evan Lau", "Evan的像素空间", associated logos, or
+(f) use the names "LuoScope", "RobustLuo", associated logos, or
     other project branding to endorse or promote any modified or unofficial
     version; or
 (g) use the Software in any way that violates applicable law or this License.
 
 3. Contributions
 
-If you submit a contribution to the official LightC repository, you represent
+If you submit a contribution to the official LuoScope repository, you represent
 that you have the right to submit it and that you license the contribution to
 the Licensor under terms sufficient for the Licensor to use, reproduce, modify,
 distribute, sublicense, relicense, and otherwise exploit the contribution as
-part of LightC, including in future open source, source available, commercial,
-Pro, Enterprise, or proprietary versions of LightC.
+part of LuoScope, including in future open source, source available, commercial,
+Pro, Enterprise, or proprietary versions of LuoScope.
 
-Submitting a contribution does not grant you ownership of LightC or any right
+Submitting a contribution does not grant you ownership of LuoScope or any right
 to distribute modified versions except as expressly permitted by this License.
 
 4. Official Builds and Distribution
 
 Only builds, installers, portable packages, releases, update metadata, and
-download links published by the Licensor or the official LightC project are
-official LightC distributions. Any other build, package, mirror, archive,
+download links published by the Licensor or the official LuoScope project are
+official LuoScope distributions. Any other build, package, mirror, archive,
 download link, or redistribution is unofficial and not authorized unless the
 Licensor has provided prior written permission.
 

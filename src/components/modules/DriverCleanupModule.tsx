@@ -4,10 +4,14 @@
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, CheckCheck, CheckCircle2, Cpu, FolderOpen, Loader2, RotateCcw, Search, ShieldAlert, Trash2 } from 'lucide-react';
+import { Archive, CheckCheck, CheckCircle2, Cpu, FolderOpen, Loader2, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { ModuleCard } from '../ModuleCard';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { EmptyState } from '../EmptyState';
+import { EmptyScanAction } from '../EmptyScanAction';
+import { ModulePageContent } from '../ModulePageContent';
+import { ModuleScanPanel } from '../ModuleScanPanel';
+import { AdminElevationBanner } from '../AdminElevationBanner';
 import { Checkbox } from '../ui/Checkbox';
 import { useToast } from '../Toast';
 import { useModuleDashboard } from '../../contexts/DashboardContext';
@@ -21,6 +25,7 @@ import {
   type DriverScanResult,
 } from '../../api/commands';
 import { shouldSkipInactivePageRender, type ModuleRenderProps } from './moduleProps';
+import { useOneClickScanListener } from '../../hooks/useOneClickScanListener';
 import { openSearchUrl } from '../../utils/searchEngine';
 
 function findScrollParent(element: HTMLElement): HTMLElement | null {
@@ -173,9 +178,8 @@ function getDriverSearchQuery(packageInfo: DriverPackageInfo): string {
 }
 
 export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true }: ModuleRenderProps) {
-  const { moduleState, expandedModule, setExpandedModule, updateModuleState, oneClickScanTrigger } = useModuleDashboard('driverCleanup');
+  const { moduleState, expandedModule, setExpandedModule, updateModuleState } = useModuleDashboard('driverCleanup');
   const { showToast } = useToast();
-  const lastScanTriggerRef = useRef(0);
   const [scanResult, setScanResult] = useState<DriverScanResult | null>(null);
   const [selectedNames, setSelectedNames] = useState<Set<string>>(new Set());
   const [showConfirm, setShowConfirm] = useState(false);
@@ -226,12 +230,7 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
     }
   }, [setExpandedModule, updateModuleState]);
 
-  useEffect(() => {
-    if (oneClickScanTrigger > 0 && oneClickScanTrigger !== lastScanTriggerRef.current) {
-      lastScanTriggerRef.current = oneClickScanTrigger;
-      void loadDrivers();
-    }
-  }, [loadDrivers, oneClickScanTrigger]);
+  useOneClickScanListener('driverCleanup', loadDrivers);
 
   const toggleSelection = useCallback((publishedName: string) => {
     setSelectedNames((current) => {
@@ -372,19 +371,28 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
           </div>
         ) : null}
       >
-        <div className="p-4 space-y-3">
-          {!scanResult && !loading && (
-            <EmptyState icon={Cpu} title="尚未检测驱动包" description="LightC 只会通过 Windows pnputil 检查第三方驱动包，不直接删除驱动文件。" />
-          )}
+        {!scanResult && !loading ? (
+          <ModulePageContent layoutMode={layoutMode} centerIdle>
+            <EmptyState
+              page={layoutMode === 'pages'}
+              icon={Cpu}
+              title="尚未检测驱动包"
+              description="LuoScope 只会通过 Windows pnputil 检查第三方驱动包，不直接删除驱动文件。"
+              action={<EmptyScanAction onClick={() => void loadDrivers()} label="检测驱动" />}
+            />
+          </ModulePageContent>
+        ) : (
+          <div className={layoutMode === 'pages' ? 'module-page-content module-page-content--filled' : 'p-4 space-y-3'}>
+            {loading && !scanResult && (
+              <ModuleScanPanel
+                icon={Cpu}
+                compact
+                title="正在读取 Windows 驱动包信息"
+                description="LuoScope 只会通过 Windows pnputil 检查第三方驱动包，不直接删除驱动文件。"
+              />
+            )}
 
-          {loading && !scanResult && (
-            <div className="py-8 flex flex-col items-center justify-center text-[var(--fg-muted)]">
-              <Loader2 className="w-7 h-7 text-emerald-500 animate-spin mb-2" />
-              <p className="text-sm">正在读取 Windows 驱动包信息...</p>
-            </div>
-          )}
-
-          {scanResult && (
+            {scanResult && (
             <div className="space-y-2">
               <div
                 ref={toolbarRef}
@@ -430,10 +438,7 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
 
               <div className="min-w-0">
               {!scanResult.is_admin && (
-                <div className="flex items-start gap-2 rounded-xl border border-orange-300 bg-orange-50 px-3 py-2 text-xs text-orange-700 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-300">
-                  <ShieldAlert className="w-4 h-4 shrink-0" />
-                  <span>当前可以检测，但删除驱动包需要以管理员身份运行 LightC。</span>
-                </div>
+                <AdminElevationBanner message="当前可以检测驱动包，但删除与恢复操作需要管理员权限。" />
               )}
 
               {scanResult.packages.length === 0 ? (
@@ -518,7 +523,8 @@ export function DriverCleanupModule({ layoutMode = 'cards', isPageActive = true 
               </div>
             </div>
           )}
-        </div>
+          </div>
+        )}
       </ModuleCard>
 
       <ConfirmDialog

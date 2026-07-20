@@ -22,7 +22,8 @@ export function useLocalDrives() {
     getLocalDrives()
       .then((result) => {
         if (cancelled) return;
-        setDrives(result);
+        // 扫描类模块只展示固定磁盘，U 盘在顶栏单独展示。
+        setDrives(result.filter((drive) => !drive.is_removable));
         setError(null);
       })
       .catch((err) => {
@@ -77,8 +78,7 @@ export function DriveSelect({
   drives,
   onChange,
   disabled = false,
-  // 统一盘符选择器宽度，避免卡片模式下不同模块标题区域出现视觉跳变。
-  widthClass = 'w-28',
+  widthClass,
 }: DriveSelectProps) {
   const options = useMemo<SelectOption[]>(
     () => {
@@ -99,8 +99,10 @@ export function DriveSelect({
       value={normalizeDriveLetter(value)}
       options={options}
       onChange={(driveLetter) => onChange(normalizeDriveLetter(driveLetter))}
-      widthClass={widthClass}
+      widthClass={widthClass ?? ''}
       size="sm"
+      // 未指定固定宽度时随卷标伸展，避免「D: · 应用和游戏」被截断
+      menuMatchContent={!widthClass}
       disabled={disabled}
     />
   );

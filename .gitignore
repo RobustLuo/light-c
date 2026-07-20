@@ -17,6 +17,7 @@ dist-ssr
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
 .idea
 .DS_Store
 *.suo
@@ -28,6 +29,7 @@ dist-ssr
 # Tauri signing keys (KEEP PRIVATE!)
 .tauri/update.key
 .tauri/*.key
+.tauri/signing-password.local.txt
 build.sh
 build.ps1
 

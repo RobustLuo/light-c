@@ -3,15 +3,21 @@
 // ============================================================================
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle, Download, ExternalLink, Info, RefreshCw, ShieldCheck, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Download, ExternalLink, Info, RefreshCw, Shield, ShieldCheck, XCircle } from 'lucide-react';
 import { useToast } from '../Toast';
 import { getOfficialDownloadConfig, type OfficialDownloadConfig } from '../../utils/downloadConfig';
-import { verifyIntegrity, type VerifyIntegrityResult } from '../../api/commands';
+import { checkAdminPrivilege, verifyIntegrity, type VerifyIntegrityResult } from '../../api/commands';
+import { useSettings } from '../../contexts';
+import { tryRequestAdminElevation } from '../../hooks/useAutoAdminElevation';
+import { SettingsPanel, SettingsRow, SettingsSection } from './SettingsUi';
 
 export function SecuritySettings() {
   const [verifyResult, setVerifyResult] = useState<VerifyIntegrityResult | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [downloadConfig, setDownloadConfig] = useState<OfficialDownloadConfig | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [isRequestingElevation, setIsRequestingElevation] = useState(false);
+  const { settings, updateSettings } = useSettings();
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -22,6 +28,55 @@ export function SecuritySettings() {
         console.warn('读取官方下载配置失败:', error);
       });
   }, []);
+
+  useEffect(() => {
+    checkAdminPrivilege()
+      .then(setIsAdmin)
+      .catch(() => setIsAdmin(false));
+  }, []);
+
+  const handleToggleAutoElevation = async (enabled: boolean) => {
+    updateSettings({ autoRequestAdminOnStartup: enabled });
+    if (!enabled || isAdmin) return;
+
+    try {
+      setIsRequestingElevation(true);
+      await tryRequestAdminElevation();
+      showToast({
+        type: 'info',
+        title: '正在请求管理员权限',
+        description: '请在 UAC 弹窗中点击“是”，确认后应用将以管理员身份重启。',
+      });
+    } catch (error) {
+      showToast({
+        type: 'error',
+        title: '提权失败',
+        description: String(error),
+      });
+    } finally {
+      setIsRequestingElevation(false);
+    }
+  };
+
+  const handleManualElevation = async () => {
+    try {
+      setIsRequestingElevation(true);
+      await tryRequestAdminElevation();
+      showToast({
+        type: 'info',
+        title: '正在请求管理员权限',
+        description: '请在 UAC 弹窗中点击“是”，确认后应用将以管理员身份重启。',
+      });
+    } catch (error) {
+      showToast({
+        type: 'error',
+        title: '提权失败',
+        description: String(error),
+      });
+    } finally {
+      setIsRequestingElevation(false);
+    }
+  };
 
   const handleVerifyIntegrity = async () => {
     try {
@@ -47,7 +102,7 @@ export function SecuritySettings() {
         version: '',
         channel: '',
         message: `无法连接到 GitHub，请检查网络：${String(error)}`,
-        official_url: 'https://github.com/Chunyu33/light-c/releases',
+        official_url: 'https://github.com/RobustLuo/light-c/releases',
       });
     } finally {
       setIsVerifying(false);
@@ -56,16 +111,82 @@ export function SecuritySettings() {
 
   return (
     <div className="space-y-6">
+      <SettingsSection icon={Shield} title="管理员权限">
+        <SettingsPanel>
+          <SettingsRow
+            label="启动时自动请求管理员权限"
+            description="开启后，若检测到非管理员运行，会在启动时弹出 Windows UAC 请求提权。MFT 全盘分析、系统瘦身、旧驱动清理等功能需要管理员权限。"
+          >
+            <button
+              type="button"
+              onClick={() => handleToggleAutoElevation(!settings.autoRequestAdminOnStartup)}
+              disabled={isRequestingElevation || isAdmin === true}
+              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${
+                settings.autoRequestAdminOnStartup ? 'bg-[var(--brand-green)]' : 'bg-[var(--bg-switch)]'
+              }`}
+              title={isAdmin ? '当前已是管理员模式' : undefined}
+            >
+              <span
+                className={`absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform duration-300 ${
+                  settings.autoRequestAdminOnStartup ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </SettingsRow>
+
+          <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[var(--border-muted)] bg-[var(--bg-card)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[var(--text-primary)]">当前权限状态</p>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                {isAdmin === null
+                  ? '正在检测...'
+                  : isAdmin
+                    ? '已以管理员身份运行，MFT 与系统级清理功能可用。'
+                    : '当前为普通用户权限，部分功能会降级或跳过。'}
+              </p>
+            </div>
+            {!isAdmin && (
+              <button
+                type="button"
+                onClick={handleManualElevation}
+                disabled={isRequestingElevation}
+                className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-[var(--brand-green)] px-3 py-2 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isRequestingElevation ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                {isRequestingElevation ? '正在请求...' : '立即以管理员重启'}
+              </button>
+            )}
+          </div>
+
+          <div className="mt-4 rounded-xl border border-[var(--color-warning)]/20 bg-[var(--color-warning)]/10 p-3">
+            <div className="flex items-start gap-2">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-warning)]" />
+              <div className="space-y-1 text-xs leading-relaxed text-[var(--text-secondary)]">
+                <p>
+                  Windows 安全策略不允许任何程序绕过 UAC 静默提权。LuoScope 只能在您确认 UAC 弹窗后以管理员身份重启自身；
+                  「文件被系统占用」的跳过项与权限无关，提权后仍可能无法访问正在使用的系统文件。
+                </p>
+                {import.meta.env.DEV && (
+                  <p className="font-medium text-[var(--color-warning)]">
+                    开发模式（npm run tauri dev）不支持应用内提权重启。请以管理员身份打开终端后重新执行 npm run tauri dev。
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </SettingsPanel>
+      </SettingsSection>
+
       <div className="space-y-3">
         <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-2">
           <ShieldCheck className="w-3.5 h-3.5" />
           官方原版校验
         </h4>
-        <div className="bg-[var(--bg-main)] rounded-2xl p-5 space-y-4">
+        <div className="settings-panel p-5 space-y-4">
           <div>
             <p className="text-sm font-medium text-[var(--text-primary)]">校验文件完整性</p>
             <p className="text-xs text-[var(--text-muted)] leading-relaxed mt-1">
-              使用官方公钥读取签名来验证当前运行的 LightC.exe。
+              使用官方公钥读取签名来验证当前运行的 LuoScope.exe。
             </p>
           </div>
 
@@ -92,13 +213,13 @@ export function SecuritySettings() {
           <Download className="w-3.5 h-3.5" />
           官方下载渠道
         </h4>
-        <div className="bg-[var(--bg-main)] rounded-2xl p-5 space-y-3">
+        <div className="settings-panel p-5 space-y-3">
           <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-            LightC 的官方文件仅通过以下渠道发布，其他来源均为第三方转载。
+            LuoScope 的官方文件仅通过以下渠道发布，其他来源均为第三方转载。
           </p>
 
           <a
-            href={downloadConfig?.githubReleasesUrl ?? 'https://github.com/Chunyu33/light-c/releases'}
+            href={downloadConfig?.githubReleasesUrl ?? 'https://github.com/RobustLuo/light-c/releases'}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-between rounded-xl bg-[var(--bg-card)] px-3 py-3 transition-colors hover:bg-[var(--bg-hover)] group"
@@ -125,36 +246,18 @@ export function SecuritySettings() {
             </a>
           )}
 
-          <div className="rounded-xl bg-[var(--bg-card)] px-3 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-[var(--text-primary)]">作者本人社交平台</p>
-                <p className="mt-0.5 text-xs text-[var(--text-muted)]">B站 / 抖音同名账号「Evan的像素空间」发布的网盘链接</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <a
-                  href={downloadConfig?.bilibiliUrl ?? 'https://space.bilibili.com/387797235'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--brand-green)] hover:bg-[var(--brand-green)]/10"
-                  title="打开 B站 @Evan的像素空间"
-                >
-                  B站
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-                <a
-                  href={downloadConfig?.douyinUrl ?? 'https://www.douyin.com/search/Evan%E7%9A%84%E5%83%8F%E7%B4%A0%E7%A9%BA%E9%97%B4'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--brand-green)] hover:bg-[var(--brand-green)]/10"
-                  title="在抖音搜索 Evan的像素空间"
-                >
-                  抖音
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </div>
+          <a
+            href={downloadConfig?.githubReleasesUrl ?? 'https://github.com/RobustLuo'}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-between rounded-xl bg-[var(--bg-card)] px-3 py-3 transition-colors hover:bg-[var(--bg-hover)] group"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[var(--text-primary)]">作者 GitHub</p>
+              <p className="mt-0.5 text-xs text-[var(--text-muted)]">Fork 版由 RobustLuo 维护，请从 GitHub Releases 获取构建</p>
             </div>
-          </div>
+            <ExternalLink className="h-4 w-4 shrink-0 text-[var(--text-faint)] group-hover:text-[var(--brand-green)]" />
+          </a>
         </div>
       </div>
 
@@ -164,7 +267,7 @@ export function SecuritySettings() {
           <div className="min-w-0 space-y-2">
             <p className="text-sm font-medium text-[var(--text-primary)]">第三方渠道的风险</p>
             <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
-              公众号、论坛、网盘分享等第三方渠道发布的 LightC 文件，可能存在版本滞后、二次打包、捆绑推广软件或广告程序等问题。
+              公众号、论坛、网盘分享等第三方渠道发布的 LuoScope 文件，可能存在版本滞后、二次打包、捆绑推广软件或广告程序等问题。
             </p>
             <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
               部分网盘链接需要积分或关注，属于借助本软件的商业引流行为。以上风险与作者无关，作者对第三方渠道分发的文件内容不承担任何责任。

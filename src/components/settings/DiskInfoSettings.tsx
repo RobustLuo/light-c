@@ -125,7 +125,7 @@ function DiskInfoCard({ disk }: { disk: DiskHealthInfo }) {
   const subtitle = `${disk.drive_letters.length > 0 ? disk.drive_letters.join(' / ') : '未分配盘符'} · ${formatMediaType(disk.media_type)} · ${disk.bus_type || '未知总线'}`;
 
   return (
-    <article className="min-w-0 overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-main)] p-4">
+    <article className="settings-panel min-w-0 overflow-hidden p-4">
       <div className="flex min-w-0 items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--brand-green-10)] text-[var(--brand-green)]">
           <HardDrive className="h-4 w-4" />
@@ -200,7 +200,7 @@ export function DiskInfoSettings() {
       </div>
 
       {isLoading && (
-        <div className="flex items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-main)] py-12 text-sm text-[var(--text-muted)]">
+        <div className="settings-panel flex items-center justify-center py-12 text-sm text-[var(--text-muted)]">
           <Loader2 className="mr-2 h-4 w-4 animate-spin text-[var(--brand-green)]" /> 正在读取本机磁盘信息...
         </div>
       )}
@@ -216,7 +216,7 @@ export function DiskInfoSettings() {
       )}
 
       {!isLoading && !error && disks === null && (
-        <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-[var(--bg-main)] px-4 py-12 text-center">
+        <div className="settings-panel border border-dashed px-4 py-12 text-center">
           <HardDrive className="mx-auto h-8 w-8 text-[var(--brand-green)]" />
           <p className="mt-3 text-sm font-semibold text-[var(--text-primary)]">尚未读取磁盘信息</p>
           <p className="mt-1 text-xs text-[var(--text-muted)]">点击右上角“读取信息”后获取本机物理磁盘数据。</p>
@@ -224,7 +224,7 @@ export function DiskInfoSettings() {
       )}
 
       {!isLoading && !error && disks !== null && disks.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-[var(--bg-main)] px-4 py-12 text-center">
+        <div className="settings-panel border border-dashed px-4 py-12 text-center">
           <HardDrive className="mx-auto h-8 w-8 text-[var(--brand-green)]" />
           <p className="mt-3 text-sm font-semibold text-[var(--text-primary)]">未发现可读取的物理磁盘</p>
           <p className="mt-1 text-xs text-[var(--text-muted)]">请稍后重新读取，或检查 Windows Storage 服务是否可用。</p>

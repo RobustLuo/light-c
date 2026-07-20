@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "LightC",
-  "version": "2.12.2",
-  "identifier": "com.chunyu.LightC",
+  "productName": "LuoScope",
+  "version": "2.12.3",
+  "identifier": "com.robustluo.LuoScope",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1666",
@@ -13,18 +13,18 @@
     "windows": [
       {
         "label": "main",
-        "title": "LightC",
-        "width": 820,
-        "height": 610,
-        "minWidth": 820,
-        "minHeight": 610,
+        "title": "LuoScope",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 680,
         "center": true,
         "decorations": false,
         "visible": false
       },
       {
         "label": "splashscreen",
-        "title": "LightC",
+        "title": "LuoScope",
         "width": 400,
         "height": 320,
         "center": true,
@@ -69,9 +69,9 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/Chunyu33/light-c/releases/latest/download/latest.json"
+        "https://github.com/RobustLuo/light-c/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU3NEJFNkU1NzM3OEQyQTQKUldTazBuaHo1ZVpMVnpKbnUrSnUrWlpVakhKL1c5ZXV3ZXhYeW4wbFRSeVFyb01TZ0h2RGpsZFoK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYxMEU4MEYzRDdEODk1MDQKUldRRWxkalg4NEFPWVR3SjdDbkt0L2Q5TWUzaXdkc3lIejZqVzV6eHk1VkN6VzZCVlRURmVlQy8K"
     }
   }
 }

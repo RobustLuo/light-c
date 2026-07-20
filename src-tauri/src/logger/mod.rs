@@ -8,7 +8,7 @@
 // 3. 异步写入日志，不阻塞主线程
 // 4. 即使日志写入失败，清理逻辑也能继续运行
 //
-// 日志存储位置：AppData/Roaming/LightC/logs/
+// 日志存储位置：AppData/Roaming/LuoScope/logs/
 // 文件命名格式：cleanup_YYYYMMDD_HHMMSS.json
 // ============================================================================
 
@@ -137,7 +137,7 @@ impl CleanupLogger {
     /// 创建日志管理器
     ///
     /// # Arguments
-    /// * `app_data_dir` - 应用数据目录 (AppData/Roaming/LightC)
+    /// * `app_data_dir` - 应用数据目录 (AppData/Roaming/LuoScope)
     pub fn new(app_data_dir: &Path) -> Self {
         let log_dir = app_data_dir.join("logs");
 

@@ -12,20 +12,26 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronRight,
   FolderOpen,
+  GitCompare,
   HardDrive,
   Loader2,
+  MapPin,
   Minus,
   Search,
-  XCircle,
-  X,
-  ChevronRight,
   Sparkles,
   TrendingDown,
   TrendingUp,
+  X,
+  Zap,
 } from 'lucide-react';
 import { ModuleCard } from '../ModuleCard';
 import { EmptyState } from '../EmptyState';
+import { EmptyScanAction } from '../EmptyScanAction';
+import { ModulePageContent } from '../ModulePageContent';
+import { ModuleScanPanel } from '../ModuleScanPanel';
+import { AdminElevationBanner } from '../AdminElevationBanner';
 import {
   defaultDriveLetter,
   DriveSelect,
@@ -38,6 +44,7 @@ import { useModuleDashboard } from '../../contexts/DashboardContext';
 import { useSettings } from '../../contexts';
 import { openSearchUrl } from '../../utils/searchEngine';
 import { shouldSkipInactivePageRender, type ModuleRenderProps } from './moduleProps';
+import { useOneClickScanListener } from '../../hooks/useOneClickScanListener';
 import {
   checkAdminPrivilege,
   cancelDiskGrowthScan,
@@ -54,7 +61,9 @@ import {
   type DiskGrowthReport,
   type DiskGrowthScanProgress,
   type DiskGrowthScanResponse,
+  type LocalDriveInfo,
 } from '../../api/commands';
+import type { LayoutMode } from '../../config/moduleMeta';
 import { formatSize } from '../../utils/format';
 
 function simplifyPath(path: string): string {
@@ -767,10 +776,139 @@ function DiskGrowthDetailsModal({
   );
 }
 
+/** 复用顶栏磁盘卡片的进度条色阶，保持全局视觉一致 */
+function driveUsageBarClass(percent: number): string {
+  if (percent > 90) return 'dashboard-drive-card__bar--danger';
+  if (percent > 75) return 'dashboard-drive-card__bar--warning';
+  return 'dashboard-drive-card__bar--normal';
+}
+
+/** 扫描前引导：与 empty-state / module-scan-panel 同系，嵌入页面内容区 */
+function DiskGrowthIdlePanel({
+  layoutMode,
+  selectedDrive,
+  selectedDriveLabel,
+  drivesError,
+  isAdmin,
+  isNtfsBlocked,
+  onScan,
+}: {
+  layoutMode: LayoutMode;
+  selectedDrive: LocalDriveInfo | null;
+  selectedDriveLabel: string;
+  drivesError: string | null;
+  isAdmin: boolean | null;
+  isNtfsBlocked: boolean;
+  onScan: () => void;
+}) {
+  const scanDisabled = isAdmin === false || isNtfsBlocked;
+  const usagePercent = selectedDrive?.usage_percent ?? 0;
+
+  return (
+    <ModulePageContent layoutMode={layoutMode} centerIdle className="disk-growth-intro-wrap">
+      <div className="disk-growth-intro motion-enter">
+        {selectedDrive && (
+          <article
+            className="disk-growth-intro__drive dashboard-drive-card"
+            title={driveOptionTitle(selectedDrive)}
+          >
+            <div className="dashboard-drive-card__head">
+              <div className="dashboard-drive-card__icon">
+                <HardDrive className="h-3.5 w-3.5" />
+              </div>
+              <div className="dashboard-drive-card__meta">
+                <div className="dashboard-drive-card__title-row">
+                  <span className="dashboard-drive-card__letter">
+                    {selectedDrive.drive_letter.replace(':', '')}
+                  </span>
+                  {selectedDrive.is_system && (
+                    <span className="dashboard-drive-card__badge">系统</span>
+                  )}
+                  {selectedDrive.file_system && (
+                    <span className="dashboard-drive-card__badge">{selectedDrive.file_system}</span>
+                  )}
+                </div>
+                <p className="dashboard-drive-card__subtitle truncate">
+                  {selectedDrive.volume_name || '本地磁盘'}
+                </p>
+              </div>
+              <span className="dashboard-drive-card__percent tabular-nums">
+                {usagePercent.toFixed(0)}%
+              </span>
+            </div>
+            <div className="dashboard-drive-card__track" aria-hidden>
+              <div
+                className={`dashboard-drive-card__bar ${driveUsageBarClass(usagePercent)}`}
+                style={{ width: `${Math.min(100, Math.max(0, usagePercent))}%` }}
+              />
+            </div>
+            <p className="dashboard-drive-card__caption tabular-nums">
+              可用 {formatSize(selectedDrive.free_space)}
+              <span className="dashboard-drive-card__caption-dot" aria-hidden>
+                ·
+              </span>
+              共 {formatSize(selectedDrive.total_space)}
+            </p>
+          </article>
+        )}
+
+        {!selectedDrive && drivesError && (
+          <p className="disk-growth-intro__error">分区列表读取失败，已回退默认 {selectedDriveLabel}</p>
+        )}
+
+        <div className="disk-growth-intro__body">
+          <div className="disk-growth-intro__icon" aria-hidden>
+            <HardDrive className="disk-growth-intro__icon-svg" strokeWidth={1.75} />
+          </div>
+          <h3 className="disk-growth-intro__title">建立 {selectedDriveLabel} 空间快照</h3>
+          <p className="disk-growth-intro__desc">
+            首次扫描通过 MFT 快速索引全盘占用；再次扫描自动对比上次快照，定位空间增减来源。
+          </p>
+          <ul className="disk-growth-intro__steps">
+            <li className="disk-growth-intro__step">
+              <Zap className="h-3.5 w-3.5 shrink-0" />
+              <span>MFT 快速索引全盘文件</span>
+            </li>
+            <li className="disk-growth-intro__step">
+              <GitCompare className="h-3.5 w-3.5 shrink-0" />
+              <span>保存快照供下次对比</span>
+            </li>
+            <li className="disk-growth-intro__step">
+              <MapPin className="h-3.5 w-3.5 shrink-0" />
+              <span>列出变化最明显的目录</span>
+            </li>
+          </ul>
+        </div>
+
+        {(isAdmin === false || isNtfsBlocked) && (
+          <div className="disk-growth-intro__notices">
+            {isAdmin === false && (
+              <AdminElevationBanner
+                compact
+                tone="neutral"
+                message="MFT 全盘分析需要管理员权限读取 NTFS 元数据。"
+              />
+            )}
+            {isNtfsBlocked && (
+              <div className="disk-growth-intro__inline-notice">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                <span>当前分区不是 NTFS，请切换到 NTFS 分区后再扫描。</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="disk-growth-intro__action">
+          <EmptyScanAction onClick={onScan} disabled={scanDisabled} />
+        </div>
+      </div>
+    </ModulePageContent>
+  );
+}
+
 export function DiskGrowthModule({ layoutMode = 'cards', isPageActive = true }: ModuleRenderProps) {
-  const { moduleState, expandedModule, setExpandedModule, updateModuleState, oneClickScanTrigger, stopScanTrigger } = useModuleDashboard('diskGrowth');
+  const { moduleState, expandedModule, setExpandedModule, updateModuleState, stopScanTrigger } = useModuleDashboard('diskGrowth');
   const { settings } = useSettings();
-  const lastScanTriggerRef = useRef(0);
   const scanningRef = useRef(false);
   const cancelRequestedRef = useRef(false);
   const scanRunIdRef = useRef(0);
@@ -932,12 +1070,7 @@ export function DiskGrowthModule({ layoutMode = 'cards', isPageActive = true }: 
     resetCurrentDriveResult();
   }, [resetCurrentDriveResult]);
 
-  useEffect(() => {
-    if (oneClickScanTrigger > 0 && oneClickScanTrigger !== lastScanTriggerRef.current) {
-      lastScanTriggerRef.current = oneClickScanTrigger;
-      handleScan();
-    }
-  }, [oneClickScanTrigger, handleScan]);
+  useOneClickScanListener('diskGrowth', handleScan);
 
   useEffect(() => {
     if (stopScanTrigger > 0 && scanningRef.current) {
@@ -999,6 +1132,10 @@ export function DiskGrowthModule({ layoutMode = 'cards', isPageActive = true }: 
     </div>
   );
 
+  const hasActiveResult = Boolean(scanSummary || growthReport);
+  const showContextBar = moduleState.status === 'scanning' || hasActiveResult;
+  const isNtfsBlocked = Boolean(selectedDrive && !selectedDrive.is_ntfs);
+
   if (shouldSkipInactivePageRender(layoutMode, isPageActive) && !detailEntry) {
     return null;
   }
@@ -1019,76 +1156,58 @@ export function DiskGrowthModule({ layoutMode = 'cards', isPageActive = true }: 
       onToggleExpand={() => setExpandedModule(isExpanded ? null : 'disk-growth')}
       onScan={handleScan}
       scanButtonText="开始扫描"
-      scanDisabled={isAdmin === false || Boolean(selectedDrive && !selectedDrive.is_ntfs)}
+      scanDisabled={isAdmin === false || isNtfsBlocked}
+      hideScanButton={layoutMode === 'pages' && moduleState.status === 'idle' && !hasActiveResult}
       titleExtra={driveSelector}
       error={error}
     >
-      <div className="mx-4 mt-4 flex flex-col gap-2 rounded-xl bg-[var(--bg-main)] px-4 py-3 text-[12px] text-[var(--text-muted)] sm:flex-row sm:items-center sm:justify-between">
-        <span title={selectedDrive ? driveOptionTitle(selectedDrive) : selectedDriveLabel}>
-          当前分析：{selectedDriveLabel}
-          {selectedDrive?.volume_name ? ` · ${selectedDrive.volume_name}` : ''}
-          {selectedDrive?.file_system ? ` · ${selectedDrive.file_system}` : ''}
-        </span>
-        {selectedDrive ? (
-          <span className="tabular-nums">
-            可用 {formatSize(selectedDrive.free_space)} / 总计 {formatSize(selectedDrive.total_space)}
+      {showContextBar && (
+        <div className="disk-growth-context mx-4 mt-4 flex flex-col gap-2 rounded-xl border border-[var(--border-muted)] bg-[var(--bg-main)] px-4 py-3 text-[12px] text-[var(--text-muted)] sm:flex-row sm:items-center sm:justify-between">
+          <span title={selectedDrive ? driveOptionTitle(selectedDrive) : selectedDriveLabel}>
+            当前分析：{selectedDriveLabel}
+            {selectedDrive?.volume_name ? ` · ${selectedDrive.volume_name}` : ''}
+            {selectedDrive?.file_system ? ` · ${selectedDrive.file_system}` : ''}
           </span>
-        ) : drivesError ? (
-          <span className="text-amber-600 dark:text-amber-400">分区列表读取失败，已回退默认 C 盘</span>
-        ) : (
-          <span>正在读取分区列表...</span>
-        )}
-      </div>
-
-      {isAdmin === false && (
-        <div className="mx-4 mt-4 flex items-start gap-3 rounded-xl bg-amber-500/10 px-4 py-3 text-[13px] text-amber-700 dark:text-amber-400">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>当前未检测到管理员权限。MFT 全盘分析需要管理员权限，请以管理员身份启动 LightC 或运行开发命令。</span>
+          {selectedDrive ? (
+            <span className="tabular-nums">
+              可用 {formatSize(selectedDrive.free_space)} / 总计 {formatSize(selectedDrive.total_space)}
+            </span>
+          ) : drivesError ? (
+            <span className="text-amber-600 dark:text-amber-400">分区列表读取失败，已回退默认 C 盘</span>
+          ) : (
+            <span>正在读取分区列表...</span>
+          )}
         </div>
       )}
 
-      {selectedDrive && !selectedDrive.is_ntfs && (
-        <div className="mx-4 mt-4 flex items-start gap-3 rounded-xl bg-amber-500/10 px-4 py-3 text-[13px] text-amber-700 dark:text-amber-400">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>当前分区不是 NTFS，暂不支持 MFT 快速全盘分析，请切换到 NTFS 分区。</span>
-        </div>
-      )}
-
-      {moduleState.status === 'idle' && !scanSummary && !growthReport && (
-        <div className="p-4">
-          <EmptyState
-            icon={HardDrive}
-            title={`尚未扫描 ${selectedDriveLabel} 变化`}
-            description={`点击开始扫描，建立 ${selectedDriveLabel} 快照；再次扫描后会对比新增、减少和明显变化的目录。`}
-          />
-        </div>
+      {moduleState.status === 'idle' && !hasActiveResult && (
+        <DiskGrowthIdlePanel
+          layoutMode={layoutMode}
+          selectedDrive={selectedDrive}
+          selectedDriveLabel={selectedDriveLabel}
+          drivesError={drivesError}
+          isAdmin={isAdmin}
+          isNtfsBlocked={isNtfsBlocked}
+          onScan={() => void handleScan()}
+        />
       )}
 
       {moduleState.status === 'scanning' && (
-        <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
-          <Loader2 className="w-8 h-8 animate-spin text-[var(--brand-green)] mb-3" />
-          <p className="text-sm">{scanProgress?.message ?? `正在通过 MFT 扫描 ${selectedDriveLabel}...`}</p>
-          <p className="text-xs text-[var(--text-muted)] mt-1 tabular-nums">
-            已用时 {scanElapsed}s
-          </p>
-          {scanProgress && (
-            <p className="text-xs text-[var(--text-faint)] mt-1 tabular-nums">
-              {getPhaseLabel(scanProgress.stage)} {formatProgressCount(scanProgress)}
-            </p>
-          )}
-          <p className="text-xs text-[var(--text-faint)] mt-1">
-            首次扫描会建立快照，下次扫描开始展示新增和减少的目录
-          </p>
-          <button
-            onClick={handleStopScan}
-            className="mt-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
-              bg-red-50 dark:bg-red-900/20 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30
-              border border-red-200 dark:border-red-800/30 transition-colors"
-          >
-            <XCircle className="w-3.5 h-3.5" />
-            停止扫描
-          </button>
-        </div>
+        <ModuleScanPanel
+          icon={HardDrive}
+          title={scanProgress?.message ?? `正在通过 MFT 扫描 ${selectedDriveLabel}`}
+          description="首次扫描会建立快照，下次扫描开始展示新增和减少的目录"
+          backend="mft"
+          detail={
+            scanProgress
+              ? `${getPhaseLabel(scanProgress.stage)} ${formatProgressCount(scanProgress)}`
+              : undefined
+          }
+          stats={[
+            { label: '已用时', value: `${scanElapsed}s` },
+          ]}
+          onStop={handleStopScan}
+        />
       )}
 
       {moduleState.status === 'done' && scanSummary && growthReport && (

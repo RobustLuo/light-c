@@ -136,10 +136,10 @@ pub fn scan() -> Result<DriverScanResult, String> {
 pub fn restore_all_backups() -> Result<DriverRestoreResult, String> {
     let _delete_guard = DRIVER_DELETE_LOCK
         .lock()
-        .map_err(|_| "驱动清理锁异常，请重启 LightC 后重试".to_string())?;
+        .map_err(|_| "驱动清理锁异常，请重启 LuoScope 后重试".to_string())?;
 
     if !crate::system_slim::check_admin() {
-        return Err("恢复驱动包需要管理员权限，请以管理员身份运行 LightC".to_string());
+        return Err("恢复驱动包需要管理员权限，请以管理员身份运行 LuoScope".to_string());
     }
 
     let backup_directory = crate::data_dir::get_data_dir().join(DRIVER_BACKUP_DIR);
@@ -187,13 +187,13 @@ pub fn restore_all_backups() -> Result<DriverRestoreResult, String> {
 pub fn delete(published_names: Vec<String>) -> Result<DriverDeleteResult, String> {
     let _delete_guard = DRIVER_DELETE_LOCK
         .lock()
-        .map_err(|_| "驱动清理锁异常，请重启 LightC 后重试".to_string())?;
+        .map_err(|_| "驱动清理锁异常，请重启 LuoScope 后重试".to_string())?;
 
     if published_names.is_empty() {
         return Err("未选择要清理的驱动包".to_string());
     }
     if !crate::system_slim::check_admin() {
-        return Err("删除驱动包需要管理员权限，请以管理员身份运行 LightC".to_string());
+        return Err("删除驱动包需要管理员权限，请以管理员身份运行 LuoScope".to_string());
     }
 
     let selected_names = normalize_published_names(&published_names)?;
@@ -641,7 +641,7 @@ fn has_backup_inf(directory: &Path, expected_name: &str) -> bool {
 
 fn temporary_xml_path() -> PathBuf {
     std::env::temp_dir().join(format!(
-        "lightc_driver_scan_{}_{}.xml",
+        "luoscope_driver_scan_{}_{}.xml",
         std::process::id(),
         Local::now().timestamp_nanos_opt().unwrap_or_default()
     ))
@@ -1276,7 +1276,7 @@ mod tests {
     #[test]
     fn parses_current_and_outranked_device_drivers() {
         let path = PathBuf::from(std::env::temp_dir()).join(format!(
-            "lightc_driver_match_test_{}_{}.xml",
+            "luoscope_driver_match_test_{}_{}.xml",
             std::process::id(),
             1
         ));

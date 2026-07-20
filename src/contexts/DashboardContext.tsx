@@ -8,8 +8,9 @@ import {
   cancelDiskGrowthScan,
   cancelHotspotScan,
   cancelLargeFileScan,
-  getDiskInfo,
   getHealthScore,
+  getLocalDrives,
+  type LocalDriveInfo,
   HealthScoreResult,
 } from '../api/commands';
 import type { DiskInfo } from '../types';
@@ -49,6 +50,8 @@ export interface ModulesState {
   system: ModuleState;
   /** 旧驱动清理模块 */
   driverCleanup: ModuleState;
+  /** 垃圾软件清理模块 */
+  bloatware: ModuleState;
   /** 卸载残留模块 */
   leftovers: ModuleState;
   /** 注册表冗余模块 */
@@ -117,7 +120,11 @@ interface DashboardSignalsValue {
 }
 
 interface DashboardSummaryValue {
+  /** 系统盘快照，兼容旧组件 */
   diskInfo: DiskInfo | null;
+  /** 全部可见分区（含 D 盘、U 盘） */
+  localDrives: LocalDriveInfo[];
+  isLoadingDrives: boolean;
   healthData: HealthScoreResult | null;
   isLoadingHealth: boolean;
   isAnyScanning: boolean;
@@ -144,6 +151,7 @@ const initialModulesState: ModulesState = {
   social: { ...initialModuleState },
   system: { ...initialModuleState },
   driverCleanup: { ...initialModuleState },
+  bloatware: { ...initialModuleState },
   leftovers: { ...initialModuleState },
   registry: { ...initialModuleState },
   hotspot: { ...initialModuleState },
@@ -167,6 +175,7 @@ const ModuleStateContexts: { [K in keyof ModulesState]: React.Context<ModuleStat
   social: createContext<ModuleState | null>(null),
   system: createContext<ModuleState | null>(null),
   driverCleanup: createContext<ModuleState | null>(null),
+  bloatware: createContext<ModuleState | null>(null),
   leftovers: createContext<ModuleState | null>(null),
   registry: createContext<ModuleState | null>(null),
   hotspot: createContext<ModuleState | null>(null),
@@ -186,6 +195,8 @@ interface DashboardProviderProps {
 export function DashboardProvider({ children }: DashboardProviderProps) {
   // 磁盘信息
   const [diskInfo, setDiskInfo] = useState<DiskInfo | null>(null);
+  const [localDrives, setLocalDrives] = useState<LocalDriveInfo[]>([]);
+  const [isLoadingDrives, setIsLoadingDrives] = useState(true);
   // 健康评分
   const [healthData, setHealthData] = useState<HealthScoreResult | null>(null);
   const [isLoadingHealth, setIsLoadingHealth] = useState(true);
@@ -199,13 +210,29 @@ export function DashboardProvider({ children }: DashboardProviderProps) {
   const [oneClickScanTrigger, setOneClickScanTrigger] = useState(0);
   const [stopScanTrigger, setStopScanTrigger] = useState(0);
 
-  // 刷新磁盘信息
+  // 刷新磁盘信息：拉取全部分区，系统盘仍写入 diskInfo 供旧逻辑复用
   const refreshDiskInfo = useCallback(async () => {
+    setIsLoadingDrives(true);
     try {
-      const info = await getDiskInfo();
-      setDiskInfo(info);
+      const drives = await getLocalDrives();
+      setLocalDrives(drives);
+      const systemDrive =
+        drives.find((drive) => drive.is_system) ??
+        drives.find((drive) => !drive.is_removable) ??
+        drives[0];
+      if (systemDrive) {
+        setDiskInfo({
+          drive_letter: systemDrive.drive_letter,
+          total_space: systemDrive.total_space,
+          used_space: systemDrive.used_space,
+          free_space: systemDrive.free_space,
+          usage_percent: systemDrive.usage_percent,
+        });
+      }
     } catch (error) {
       console.error('获取磁盘信息失败:', error);
+    } finally {
+      setIsLoadingDrives(false);
     }
   }, []);
 
@@ -311,10 +338,12 @@ export function DashboardProvider({ children }: DashboardProviderProps) {
 
   const summaryValue = useMemo<DashboardSummaryValue>(() => ({
     diskInfo,
+    localDrives,
+    isLoadingDrives,
     healthData,
     isLoadingHealth,
     isAnyScanning,
-  }), [diskInfo, healthData, isLoadingHealth, isAnyScanning]);
+  }), [diskInfo, localDrives, isLoadingDrives, healthData, isLoadingHealth, isAnyScanning]);
 
   const value = useMemo<DashboardContextValue>(() => ({
     diskInfo,
@@ -362,6 +391,7 @@ export function DashboardProvider({ children }: DashboardProviderProps) {
                 <ModuleStateContexts.social.Provider value={modules.social}>
                   <ModuleStateContexts.system.Provider value={modules.system}>
                     <ModuleStateContexts.driverCleanup.Provider value={modules.driverCleanup}>
+                      <ModuleStateContexts.bloatware.Provider value={modules.bloatware}>
                       <ModuleStateContexts.leftovers.Provider value={modules.leftovers}>
                       <ModuleStateContexts.registry.Provider value={modules.registry}>
                         <ModuleStateContexts.hotspot.Provider value={modules.hotspot}>
@@ -375,6 +405,7 @@ export function DashboardProvider({ children }: DashboardProviderProps) {
                         </ModuleStateContexts.hotspot.Provider>
                       </ModuleStateContexts.registry.Provider>
                       </ModuleStateContexts.leftovers.Provider>
+                      </ModuleStateContexts.bloatware.Provider>
                     </ModuleStateContexts.driverCleanup.Provider>
                   </ModuleStateContexts.system.Provider>
                 </ModuleStateContexts.social.Provider>

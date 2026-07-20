@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 
 export interface SelectOption<T extends string = string> {
   value: T;
@@ -25,6 +25,8 @@ interface SelectProps<T extends string = string> {
   size?: 'sm' | 'md';
   /** 下拉列表高度类名，长列表需要限制高度避免撑破模块布局 */
   menuMaxHeightClass?: string;
+  /** 下拉宽度是否随最长选项伸展（盘符卷标等长标签场景） */
+  menuMatchContent?: boolean;
   /** 是否禁用 */
   disabled?: boolean;
 }
@@ -36,6 +38,7 @@ export function Select<T extends string = string>({
   widthClass = 'w-28',
   size = 'md',
   menuMaxHeightClass = 'max-h-64',
+  menuMatchContent = false,
   disabled = false,
 }: SelectProps<T>) {
   const [open, setOpen] = useState(false);
@@ -66,42 +69,37 @@ export function Select<T extends string = string>({
   }, [open]);
 
   const selectedOption = options.find(o => o.value === value);
-  const triggerSizeClass = size === 'sm' ? 'px-2.5 py-1.5 rounded-lg text-xs' : 'px-3 py-2 rounded-xl text-sm';
-  const optionSizeClass = size === 'sm' ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm';
+  const sizeClass = size === 'sm' ? 'sm' : 'md';
 
   return (
-    <div ref={containerRef} className={`relative ${widthClass}`}>
-      {/* 触发器 */}
+    <div
+      ref={containerRef}
+      className={`ui-select ${widthClass} ${open ? 'ui-select--open' : ''} ${
+        menuMatchContent ? 'ui-select--fit-width' : ''
+      }`}
+    >
+      {/* 触发器：实底胶囊，避免与模块正文混叠 */}
       <button
         type="button"
         disabled={disabled}
         onClick={() => setOpen(!open)}
-        className={`w-full flex items-center justify-between gap-2 ${triggerSizeClass}
-          bg-[var(--bg-card)] border border-[var(--border-color)]
-          text-[var(--text-primary)] font-medium
-          hover:border-[var(--brand-green)]/50 hover:bg-[var(--bg-hover)]
-          focus:outline-none focus:ring-2 focus:ring-[var(--brand-green)]/20
-          transition-all duration-200
-          ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-          ${open ? 'border-[var(--brand-green)] ring-2 ring-[var(--brand-green)]/20' : ''}`}
+        className={`ui-select__trigger ui-select__trigger--${sizeClass} ${
+          open ? 'ui-select__trigger--open' : ''
+        } ${disabled ? '' : 'cursor-pointer'}`}
       >
         <span className="min-w-0 truncate" title={selectedOption?.title ?? selectedOption?.label ?? value}>
           {selectedOption?.label ?? value}
         </span>
-        <ChevronDown
-          className={`w-4 h-4 text-[var(--text-muted)] transition-transform duration-200 ${
-            open ? 'rotate-180' : ''
-          }`}
-        />
+        <ChevronDown className={`ui-select__chevron ${open ? 'ui-select__chevron--open' : ''}`} />
       </button>
 
-      {/* 下拉列表 */}
+      {/* 下拉列表：不透明毛玻璃 + 独立阴影，防止背景文字穿透 */}
       {open && (
         <div
-          className={`absolute top-full left-0 mt-1.5 w-full py-1 rounded-xl
-            bg-[var(--bg-card)] border border-[var(--border-color)]
-            shadow-lg shadow-black/5 z-50 overflow-y-auto ${menuMaxHeightClass}
-            animate-in fade-in slide-in-from-top-1 duration-150`}
+          className={`ui-select__menu ${menuMaxHeightClass} ${
+            menuMatchContent ? 'ui-select__menu--fit-content' : 'w-full'
+          }`}
+          role="listbox"
         >
           {/* 筛选项可能来自平台/模型类型，数量不可控；截断与滚动能避免下拉层挤压结果区。 */}
           {options.map((option) => {
@@ -110,21 +108,20 @@ export function Select<T extends string = string>({
               <button
                 key={option.value}
                 type="button"
+                role="option"
+                aria-selected={isSelected}
                 onClick={() => {
                   onChange(option.value);
                   setOpen(false);
                 }}
-                className={`w-full flex items-center justify-between gap-2 ${optionSizeClass}
-                  transition-colors duration-100
-                  ${isSelected
-                    ? 'bg-[var(--brand-green)]/10 text-[var(--brand-green)] font-medium'
-                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                  }`}
+                className={`ui-select__option ui-select__option--${sizeClass} ${
+                  isSelected ? 'ui-select__option--selected' : 'text-[var(--text-secondary)]'
+                } cursor-pointer`}
               >
-                <span className="min-w-0 truncate" title={option.title ?? option.label}>{option.label}</span>
-                {isSelected && (
-                  <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-[var(--brand-green)]" />
-                )}
+                <span className="min-w-0 whitespace-nowrap" title={option.title ?? option.label}>
+                  {option.label}
+                </span>
+                {isSelected && <Check className="ui-select__check" aria-hidden="true" />}
               </button>
             );
           })}

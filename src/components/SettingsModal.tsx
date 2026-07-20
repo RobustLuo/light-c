@@ -3,10 +3,12 @@
 // 只负责弹窗生命周期、左侧导航和页面路由；具体设置页面按功能拆分维护。
 // ============================================================================
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useTheme } from '../contexts';
+import { useOverlayAnimation } from '../hooks/useOverlayAnimation';
+import { useSlidingNavIndicator } from '../hooks/useSlidingNavIndicator';
 import { AboutSettings } from './settings/AboutSettings';
 import { FeedbackSettings } from './settings/FeedbackSettings';
 import { FeatureSettings } from './settings/FeatureSettings';
@@ -24,84 +26,151 @@ interface SettingsModalProps {
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [renderedTab, setRenderedTab] = useState<SettingsTab>('general');
+  const [tabVisible, setTabVisible] = useState(true);
   const { mode, setMode } = useTheme();
-  const [isVisible, setIsVisible] = useState(false);
-  const [isAnimating, setIsAnimating] = useState(false);
-  // 记录是否曾经进入可见状态，用于区分首次挂载预隐藏和关闭动画。
-  const enteredRef = useRef(false);
-  if (isVisible) enteredRef.current = true;
+  const { isVisible, shouldRender, enteredRef } = useOverlayAnimation(isOpen, { exitDuration: 280 });
+  const { navRef, registerItem, indicator } = useSlidingNavIndicator(activeTab, { enabled: isOpen });
 
+  // 切换设置页时使用轻量交叉淡入，避免内容瞬间跳变
   useEffect(() => {
-    if (isOpen) {
-      setIsAnimating(true);
-      setIsVisible(true);
+    if (activeTab === renderedTab) {
       return;
     }
 
-    setIsVisible(false);
-    const timer = setTimeout(() => setIsAnimating(false), 190);
-    return () => clearTimeout(timer);
-  }, [isOpen]);
+    setTabVisible(false);
+    const timer = window.setTimeout(() => {
+      setRenderedTab(activeTab);
+      setTabVisible(true);
+    }, 140);
 
-  if (!isOpen && !isAnimating) return null;
+    return () => window.clearTimeout(timer);
+  }, [activeTab, renderedTab]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!shouldRender) {
+    return null;
+  }
+
+  const activeTabMeta = SETTINGS_TABS.find((tab) => tab.id === renderedTab);
+
+  const renderTabContent = () => {
+    switch (renderedTab) {
+      case 'general':
+        return <GeneralSettings mode={mode} setMode={setMode} />;
+      case 'features':
+        return <FeatureSettings />;
+      case 'disk-info':
+        return <DiskInfoSettings />;
+      case 'guide':
+        return <GuideSettings />;
+      case 'security':
+        return <SecuritySettings />;
+      case 'feedback':
+        return <FeedbackSettings />;
+      case 'about':
+        return <AboutSettings />;
+      default:
+        return null;
+    }
+  };
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4 py-5">
       <div
-        className={`absolute inset-0 bg-black/40 backdrop-blur-sm ${isVisible ? 'modal-overlay-in' : enteredRef.current ? 'modal-overlay-out' : 'opacity-0'}`}
+        className={`absolute inset-0 bg-black/35 backdrop-blur-md ${
+          isVisible ? 'modal-overlay-in' : enteredRef.current ? 'modal-overlay-out' : 'opacity-0'
+        }`}
         onClick={onClose}
       />
 
-      <div className={`relative h-[80vh] w-[76vw] min-h-0 min-w-0 max-h-[calc(100vh-24px)] max-w-[calc(100vw-24px)] overflow-hidden rounded-2xl bg-[var(--bg-card)] shadow-2xl ${isVisible ? 'modal-content-in' : enteredRef.current ? 'modal-content-out' : 'opacity-0'}`}>
-        <div className="flex h-full">
-          <aside className="w-[160px] shrink-0 border-r border-[var(--border-color)] bg-[var(--bg-main)] py-4">
-            <div className="mb-4 px-4">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">设置</h2>
-            </div>
-            <nav className="space-y-1 px-2">
-              {SETTINGS_TABS.map(({ id, label, icon: Icon }) => (
+      <div
+        className={`settings-modal-shell relative flex h-[min(80vh,760px)] w-[min(920px,calc(100vw-32px))] min-h-0 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--glass-border)] glass-panel-strong shadow-[var(--shadow-lg)] ${
+          isVisible ? 'settings-modal-in' : enteredRef.current ? 'settings-modal-out' : 'opacity-0'
+        }`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="设置"
+      >
+        <aside className="settings-sidebar shrink-0">
+          <div className="px-5 pt-5 pb-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">Preferences</p>
+            <h2 className="mt-1 text-base font-semibold tracking-tight text-[var(--text-primary)]">设置</h2>
+          </div>
+
+          <nav
+            ref={navRef}
+            className="settings-sidebar-nav nav-with-indicator relative min-h-0 flex-1 overflow-y-auto px-3 pb-4"
+          >
+            <span
+              className="nav-sliding-indicator nav-sliding-indicator--settings"
+              aria-hidden
+              style={{
+                transform: `translateY(${indicator.top}px)`,
+                height: indicator.height,
+                opacity: indicator.opacity,
+              }}
+            />
+            {SETTINGS_TABS.map(({ id, label, icon: Icon }) => {
+              const isActive = activeTab === id;
+              return (
                 <button
                   key={id}
+                  ref={(node) => registerItem(id, node)}
                   type="button"
                   onClick={() => setActiveTab(id)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${activeTab === id
-                    ? 'bg-[var(--brand-green-10)] font-medium text-[var(--brand-green)]'
-                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                  }`}
+                  className={`settings-nav-item ${isActive ? 'settings-nav-item-active' : ''}`}
                 >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span className="whitespace-nowrap">{label}</span>
+                  <span className={`settings-nav-icon ${isActive ? 'settings-nav-icon-active' : ''}`}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="truncate">{label}</span>
                 </button>
-              ))}
-            </nav>
-          </aside>
+              );
+            })}
+          </nav>
+        </aside>
 
-          <section className="flex min-w-0 flex-1 flex-col bg-[var(--bg-card)]">
-            <div className="flex min-h-12 items-center justify-between border-b border-[var(--border-color)] px-5">
-              <h3 className="text-sm font-medium text-[var(--text-primary)]">
-                {SETTINGS_TABS.find((tab) => tab.id === activeTab)?.label}
+        <section className="flex min-w-0 flex-1 flex-col bg-[var(--bg-glass)]/60 backdrop-blur-xl">
+          <header className="flex min-h-[56px] items-center justify-between border-b border-[var(--border-muted)] px-6">
+            <div>
+              <p className="text-[11px] text-[var(--text-faint)]">当前页面</p>
+              <h3 className="text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
+                {activeTabMeta?.label}
               </h3>
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-                aria-label="关闭设置"
-              >
-                <X className="h-4 w-4" />
-              </button>
             </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-ghost rounded-[var(--radius-md)] p-2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              aria-label="关闭设置"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </header>
 
-            <div className="min-h-0 flex-1 overflow-auto p-5">
-              {activeTab === 'general' && <GeneralSettings mode={mode} setMode={setMode} />}
-              {activeTab === 'features' && <FeatureSettings />}
-              {activeTab === 'disk-info' && <DiskInfoSettings />}
-              {activeTab === 'guide' && <GuideSettings />}
-              {activeTab === 'security' && <SecuritySettings />}
-              {activeTab === 'feedback' && <FeedbackSettings />}
-              {activeTab === 'about' && <AboutSettings />}
-            </div>
-          </section>
-        </div>
+          <div
+            className={`settings-tab-content min-h-0 flex-1 overflow-auto px-6 py-5 ${
+              tabVisible ? 'settings-tab-in' : 'settings-tab-out'
+            }`}
+          >
+            {renderTabContent()}
+          </div>
+        </section>
       </div>
     </div>,
     document.body,

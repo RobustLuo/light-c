@@ -4,8 +4,7 @@
 // 识别指向不存在可执行文件的无效条目并提供一键清理
 // ============================================================================
 
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useCallback, useMemo } from 'react';
 import {
   MousePointerClick,
   Loader2,
@@ -19,8 +18,13 @@ import {
 } from 'lucide-react';
 import { ModuleCard } from '../ModuleCard';
 import { ConfirmDialog } from '../ConfirmDialog';
+import { OperationProgressOverlay } from '../OperationProgressOverlay';
 import { EmptyState } from '../EmptyState';
+import { EmptyScanAction } from '../EmptyScanAction';
+import { ModulePageContent } from '../ModulePageContent';
+import { ModuleScanPanel } from '../ModuleScanPanel';
 import { useModuleDashboard } from '../../contexts/DashboardContext';
+import { useOneClickScanListener } from '../../hooks/useOneClickScanListener';
 import {
   scanContextMenu,
   deleteContextMenuEntries,
@@ -265,9 +269,7 @@ export function ContextMenuModule({ layoutMode = 'cards', isPageActive = true }:
     expandedModule,
     setExpandedModule,
     updateModuleState,
-    oneClickScanTrigger,
   } = useModuleDashboard('contextMenu');
-  const lastScanTriggerRef = useRef(0);
 
   // ── 本地状态 ──────────────────────────────────────────────────────────────
   const [scanResult, setScanResult] = useState<ContextMenuScanResult | null>(null);
@@ -348,13 +350,7 @@ export function ContextMenuModule({ layoutMode = 'cards', isPageActive = true }:
     }
   }, [updateModuleState, setExpandedModule]);
 
-  /** 监听一键扫描触发器 */
-  useEffect(() => {
-    if (oneClickScanTrigger > 0 && oneClickScanTrigger !== lastScanTriggerRef.current) {
-      lastScanTriggerRef.current = oneClickScanTrigger;
-      handleScan();
-    }
-  }, [oneClickScanTrigger, handleScan]);
+  useOneClickScanListener('contextMenu', handleScan);
 
   /** 切换单个条目选中状态 */
   const toggleSelect = useCallback((entry: ContextMenuEntry) => {
@@ -506,30 +502,12 @@ export function ContextMenuModule({ layoutMode = 'cards', isPageActive = true }:
 
   return (
     <>
-      {/* 删除进度遮罩 - Portal 渲染到 body 确保覆盖全屏 */}
-      {isDeleting && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center">
-          <div className="bg-[var(--bg-card)] rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 max-w-sm mx-4">
-            <div className="w-16 h-16 rounded-full bg-[var(--color-danger)]/10 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 text-[var(--color-danger)] animate-spin" />
-            </div>
-            <div className="text-center">
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]">正在清理右键菜单</h3>
-              <p className="text-sm text-[var(--text-muted)] mt-1">
-                正在删除 {selectedCount} 个注册表条目，请稍候...
-              </p>
-            </div>
-            <div className="w-full h-2 bg-[var(--bg-hover)] rounded-full overflow-hidden">
-              <div
-                className="h-full bg-[var(--color-danger)] rounded-full animate-pulse"
-                style={{ width: '100%' }}
-              />
-            </div>
-            <p className="text-xs text-[var(--text-faint)]">请勿关闭窗口</p>
-          </div>
-        </div>,
-        document.body
-      )}
+      <OperationProgressOverlay
+        isOpen={isDeleting}
+        title="正在清理右键菜单"
+        description={`正在删除 ${selectedCount.toLocaleString()} 个注册表条目，请稍候…`}
+        tone="danger"
+      />
 
       <ModuleCard
         variant={layoutMode === 'pages' ? 'page' : 'card'}
@@ -552,13 +530,23 @@ export function ContextMenuModule({ layoutMode = 'cards', isPageActive = true }:
         }
       >
         {moduleState.status === 'idle' && !scanResult && (
-          <div className="p-5">
+          <ModulePageContent layoutMode={layoutMode} centerIdle>
             <EmptyState
+              page={layoutMode === 'pages'}
               icon={MousePointerClick}
               title="尚未扫描右键菜单"
-              description="点击开始扫描，检查注册表中失效或指向不存在文件的右键菜单项。"
+              description="检查注册表中失效或指向不存在文件的右键菜单项。"
+              action={<EmptyScanAction onClick={handleScan} />}
             />
-          </div>
+          </ModulePageContent>
+        )}
+
+        {moduleState.status === 'scanning' && !scanResult && (
+          <ModuleScanPanel
+            icon={MousePointerClick}
+            title="正在扫描右键菜单"
+            description="正在检查注册表中的 Shell 扩展与上下文菜单项，并验证目标程序是否存在"
+          />
         )}
 
         {/* ── 扫描结果内容 ── */}

@@ -6,12 +6,15 @@
 // 默认全选，一键删除。
 // ============================================================================
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useCallback } from 'react';
 import { Database, Loader2, Trash2, CheckCircle2, Shield } from 'lucide-react';
 import { ModuleCard } from '../ModuleCard';
 import { ConfirmDialog } from '../ConfirmDialog';
+import { OperationProgressOverlay } from '../OperationProgressOverlay';
 import { EmptyState } from '../EmptyState';
+import { EmptyScanAction } from '../EmptyScanAction';
+import { ModulePageContent } from '../ModulePageContent';
+import { ModuleScanPanel } from '../ModuleScanPanel';
 import { useModuleDashboard } from '../../contexts/DashboardContext';
 import {
   scanRegistryRedundancy,
@@ -23,15 +26,14 @@ import {
   type CleanupLogEntryInput,
 } from '../../api/commands';
 import { shouldSkipInactivePageRender, type ModuleRenderProps } from './moduleProps';
+import { useOneClickScanListener } from '../../hooks/useOneClickScanListener';
 
 // ============================================================================
 // 主组件
 // ============================================================================
 
 export function RegistryModule({ layoutMode = 'cards', isPageActive = true }: ModuleRenderProps) {
-  const { moduleState, expandedModule, setExpandedModule, updateModuleState, triggerHealthRefresh, oneClickScanTrigger } = useModuleDashboard('registry');
-
-  const lastScanTriggerRef = useRef(0);
+  const { moduleState, expandedModule, setExpandedModule, updateModuleState, triggerHealthRefresh } = useModuleDashboard('registry');
 
   const [scanResult, setScanResult] = useState<RegistryScanResult | null>(null);
   const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set());
@@ -73,13 +75,7 @@ export function RegistryModule({ layoutMode = 'cards', isPageActive = true }: Mo
     }
   }, [updateModuleState, setExpandedModule]);
 
-  // 一键扫描触发
-  useEffect(() => {
-    if (oneClickScanTrigger > 0 && oneClickScanTrigger !== lastScanTriggerRef.current) {
-      lastScanTriggerRef.current = oneClickScanTrigger;
-      handleScan();
-    }
-  }, [oneClickScanTrigger, handleScan]);
+  useOneClickScanListener('registry', handleScan);
 
   const handleDelete = useCallback(async () => {
     if (selectedEntries.size === 0 || !scanResult) return;
@@ -175,25 +171,12 @@ export function RegistryModule({ layoutMode = 'cards', isPageActive = true }: Mo
 
   return (
     <>
-      {isDeleting && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center">
-          <div className="bg-[var(--bg-card)] rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 max-w-sm mx-4">
-            <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
-            </div>
-            <div className="text-center">
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]">正在清理注册表</h3>
-              <p className="text-sm text-[var(--text-muted)] mt-1">
-                正在删除 {selectedCount} 个注册表条目，已创建备份文件...
-              </p>
-            </div>
-            <div className="w-full h-2 bg-[var(--bg-hover)] rounded-full overflow-hidden">
-              <div className="h-full bg-amber-500 rounded-full animate-pulse" style={{ width: '100%' }} />
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      <OperationProgressOverlay
+        isOpen={isDeleting}
+        title="正在清理注册表"
+        description={`正在删除 ${selectedCount.toLocaleString()} 个注册表条目，已创建备份文件…`}
+        tone="warning"
+      />
 
       <ModuleCard
         variant={layoutMode === 'pages' ? 'page' : 'card'}
@@ -211,60 +194,23 @@ export function RegistryModule({ layoutMode = 'cards', isPageActive = true }: Mo
         error={moduleState.error}
       >
         {moduleState.status === 'idle' && !scanResult && (
-          <div className="p-5">
+          <ModulePageContent layoutMode={layoutMode} centerIdle>
             <EmptyState
+              page={layoutMode === 'pages'}
               icon={Database}
               title="尚未扫描注册表冗余"
-              description="点击开始扫描，检测已卸载程序遗留的孤立注册表引用。"
+              description="检测已卸载程序遗留的孤立注册表引用。"
+              action={<EmptyScanAction onClick={handleScan} />}
             />
-          </div>
+          </ModulePageContent>
         )}
 
         {moduleState.status === 'scanning' && !scanResult && (
-          <div className="p-5">
-            {/* 注册表扫描没有文件列表进度，补充可理解的阶段提示，减少扫描期间的空白感。 */}
-            <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)]/80 p-5 shadow-sm">
-              <div className="flex flex-col items-center text-center">
-                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand-green)]/10">
-                  <Loader2 className="h-7 w-7 animate-spin text-[var(--brand-green)]" />
-                </div>
-                <p className="text-sm font-semibold text-[var(--text-primary)]">正在扫描注册表冗余...</p>
-                <p className="mt-1 max-w-xl text-xs leading-relaxed text-[var(--text-muted)]">
-                  正在检查 HKCR\Applications 等文件关联引用，验证目标文件是否仍存在，并过滤系统路径与高风险系统进程。
-                </p>
-              </div>
-
-              {/* <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {[
-                  { label: '读取注册表引用', detail: '定位孤立应用关联', icon: Database },
-                  { label: '验证关联文件', detail: '确认目标文件缺失', icon: CheckCircle2 },
-                  { label: '过滤系统路径', detail: '跳过系统关键条目', icon: Shield },
-                  { label: '准备安全备份', detail: '清理前生成可恢复备份', icon: Shield },
-                ].map((step) => {
-                  const StepIcon = step.icon;
-                  return (
-                    <div
-                      key={step.label}
-                      className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-main)]/70 p-3"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--brand-green)]/10">
-                          <StepIcon className="h-4 w-4 text-[var(--brand-green)]" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold text-[var(--text-primary)]">{step.label}</p>
-                          <p className="truncate text-[11px] text-[var(--text-muted)]">{step.detail}</p>
-                        </div>
-                      </div>
-                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--bg-hover)]">
-                        <div className="h-full w-2/3 animate-pulse rounded-full bg-[var(--brand-green)]/70" />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div> */}
-            </div>
-          </div>
+          <ModuleScanPanel
+            icon={Database}
+            title="正在扫描注册表冗余"
+            description="正在检查 HKCR\Applications 等文件关联引用，验证目标文件是否仍存在，并过滤系统路径与高风险系统进程。"
+          />
         )}
 
         {scanResult && scanResult.entries.length > 0 && (

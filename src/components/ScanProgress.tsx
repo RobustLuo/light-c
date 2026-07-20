@@ -263,14 +263,10 @@ export function ScanProgress({
           </div>
         </div>
 
-        {/* 扫描中的动画指示器 */}
+        {/* 扫描完成时的细线流光，与模块内扫描态保持一致 */}
         {!isCompleted && (
-          <div className="mt-4 flex justify-center">
-            <div className="flex gap-1">
-              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
+          <div className="module-scan-panel__track mx-auto mt-4 max-w-[200px]" aria-hidden>
+            <div className="module-scan-panel__shimmer" />
           </div>
         )}
       </div>

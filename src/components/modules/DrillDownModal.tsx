@@ -7,10 +7,11 @@
 import { useState, useCallback, useEffect, useRef, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, Loader2, FolderOpen, Clock, HardDrive, ChevronRight,
+  X, FolderOpen, Clock, HardDrive, ChevronRight,
   CornerLeftUp, Search, Shield, Trash2, ChevronDown,
 } from 'lucide-react';
 import { ConfirmDialog } from '../ConfirmDialog';
+import { ModuleScanPanel } from '../ModuleScanPanel';
 import { useToast } from '../Toast';
 import {
   scanPathDirect, openInFolder, cleanupDirectoryContents,
@@ -516,10 +517,12 @@ export function DrillDownModal({ initialPath, onClose, onCleanupDone }: DrillDow
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-[200px]">
           {/* 加载中 */}
           {loading && (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="w-6 h-6 animate-spin text-[var(--brand-green)] mr-2" />
-              <span className="text-sm text-[var(--text-muted)]">正在扫描子目录...</span>
-            </div>
+            <ModuleScanPanel
+              compact
+              padded={false}
+              title="正在扫描子目录"
+              description="正在枚举当前路径下的文件夹与占用情况"
+            />
           )}
 
           {/* 列表内容 */}

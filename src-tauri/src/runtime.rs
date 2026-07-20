@@ -8,13 +8,22 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const PORTABLE_MARKER_FILE: &str = "LightC.portable";
-pub const PORTABLE_MANIFEST_FILE: &str = "LightC.portable.json";
+pub const PORTABLE_MARKER_FILE: &str = "LuoScope.portable";
+pub const PORTABLE_MANIFEST_FILE: &str = "LuoScope.portable.json";
+/// 旧版便携 marker，升级后仍应识别旧 zip 包。
+const LEGACY_PORTABLE_MARKER_FILE: &str = "LightC.portable";
+const LEGACY_PORTABLE_MANIFEST_FILE: &str = "LightC.portable.json";
 const PORTABLE_MANIFEST_SCHEMA_VERSION: u32 = 1;
 const PORTABLE_WEBVIEW_DIR: &str = "webview";
 const WEBVIEW_MIGRATION_DIR: &str = ".migration";
 const WEBVIEW_MIGRATION_STATE_FILE: &str = "legacy_webview_v1.json";
-const APP_IDENTIFIER: &str = "com.chunyu.LightC";
+const APP_IDENTIFIER: &str = "com.robustluo.LuoScope";
+/// 更名前的 WebView2 包名，迁移时需要读取。
+const ROBUSTLUO_LEGACY_APP_IDENTIFIER: &str = "com.robustluo.LightC";
+// 更早期 WebView2 数据仍落在 chunyu 包名目录。
+const LEGACY_APP_IDENTIFIER: &str = "com.chunyu.LightC";
+const INSTALLER_APP_DIR: &str = "LuoScope";
+const LEGACY_INSTALLER_APP_DIR: &str = "LightC";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -55,8 +64,11 @@ pub fn detect_distribution_channel(exe_path: &Path) -> DistributionChannel {
         return DistributionChannel::Installer;
     };
 
-    let manifest_path = application_dir.join(PORTABLE_MANIFEST_FILE);
-    if manifest_path.is_file() {
+    for manifest_name in [PORTABLE_MANIFEST_FILE, LEGACY_PORTABLE_MANIFEST_FILE] {
+        let manifest_path = application_dir.join(manifest_name);
+        if !manifest_path.is_file() {
+            continue;
+        }
         match std::fs::read_to_string(&manifest_path)
             .ok()
             .and_then(|content| {
@@ -72,24 +84,26 @@ pub fn detect_distribution_channel(exe_path: &Path) -> DistributionChannel {
             }
             Some(_) => {
                 log::warn!(
-                    "便携版 manifest 内容不受支持，将继续检查旧版 marker: {}",
+                    "便携版 manifest 内容不受支持，将继续检查 marker: {}",
                     manifest_path.display()
                 );
             }
             None => {
                 log::warn!(
-                    "读取便携版 manifest 失败，将继续检查旧版 marker: {}",
+                    "读取便携版 manifest 失败，将继续检查 marker: {}",
                     manifest_path.display()
                 );
             }
         }
     }
 
-    if application_dir.join(PORTABLE_MARKER_FILE).is_file() {
-        DistributionChannel::Portable
-    } else {
-        DistributionChannel::Installer
+    for marker_name in [PORTABLE_MARKER_FILE, LEGACY_PORTABLE_MARKER_FILE] {
+        if application_dir.join(marker_name).is_file() {
+            return DistributionChannel::Portable;
+        }
     }
+
+    DistributionChannel::Installer
 }
 
 /// 获取当前程序路径；统一错误信息，供数据目录和完整性校验复用。
@@ -102,7 +116,7 @@ pub fn current_application_root() -> Option<PathBuf> {
     let executable_path = current_executable_path().ok()?;
     match detect_distribution_channel(&executable_path) {
         DistributionChannel::Portable => executable_path.parent().map(Path::to_path_buf),
-        DistributionChannel::Installer => dirs::data_local_dir().map(|dir| dir.join("LightC")),
+        DistributionChannel::Installer => dirs::data_local_dir().map(|dir| dir.join(INSTALLER_APP_DIR)),
     }
 }
 
@@ -118,9 +132,77 @@ pub fn portable_webview_data_directory() -> Option<PathBuf> {
     current_application_root().map(|root| root.join(PORTABLE_WEBVIEW_DIR))
 }
 
+/// 准备 WebView2 数据目录（便携版 / 安装版 / 开发版统一入口）。
+pub fn prepare_webview_data_directory() -> Option<PathBuf> {
+    if let Some(portable_directory) = prepare_portable_webview_data_directory() {
+        return Some(portable_directory);
+    }
+    prepare_installer_webview_data_directory()
+}
+
+/// 安装版与开发版 WebView2 目录：固定落在当前用户 LocalAppData。
+///
+/// 提权后 WebView2 子进程会降权运行，若 UDF 落在 exe 旁或仅高完整性可写目录，会触发 0x80070057。
+/// 管理员实例使用独立子目录，避免与普通实例争用同一 WebView 配置锁。
+pub fn prepare_installer_webview_data_directory() -> Option<PathBuf> {
+    let local_app_data = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .or_else(dirs::data_local_dir)?;
+
+    let subdirectory = if crate::system_slim::check_admin() {
+        "webview-elevated"
+    } else {
+        "webview"
+    };
+    let directory = local_app_data.join(INSTALLER_APP_DIR).join(subdirectory);
+
+    if let Err(error) = std::fs::create_dir_all(&directory) {
+        log::warn!(
+            "无法创建安装版 WebView2 数据目录 {}: {}",
+            directory.display(),
+            error
+        );
+        return None;
+    }
+
+    if let Err(error) = migrate_installer_webview_from_legacy(&directory, &local_app_data, subdirectory) {
+        log::warn!("迁移旧版安装版 WebView2 数据失败: {}", error);
+    }
+
+    Some(directory)
+}
+
+/// 从更名前的 %LOCALAPPDATA%/LightC/webview* 复制 WebView2 数据，避免升级后界面设置丢失。
+fn migrate_installer_webview_from_legacy(
+    target_directory: &Path,
+    local_app_data: &Path,
+    subdirectory: &str,
+) -> Result<(), String> {
+    let legacy_directory = local_app_data
+        .join(LEGACY_INSTALLER_APP_DIR)
+        .join(subdirectory);
+    if !legacy_directory.is_dir() || same_path(&legacy_directory, target_directory) {
+        return Ok(());
+    }
+    // 目标目录已有内容时不覆盖，防止新版数据被旧目录回写。
+    if target_directory
+        .read_dir()
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+    copy_webview_directory_contents(&legacy_directory, target_directory)
+}
+
+/// 获取安装版 WebView2 数据目录（只读查询，供设置页展示）。
+pub fn installer_webview_data_directory() -> Option<PathBuf> {
+    prepare_installer_webview_data_directory()
+}
+
 /// 准备便携版 WebView2 数据目录，并兼容迁移旧版本的 WebView localStorage。
 ///
-/// WebView2 的缓存和 localStorage 不属于 LightC 自有文件，因此单独记录迁移状态，
+/// WebView2 的缓存和 localStorage 不属于 LuoScope 自有文件，因此单独记录迁移状态，
 /// 避免和日志、驱动备份等清理数据混在同一白名单中。
 pub fn prepare_portable_webview_data_directory() -> Option<PathBuf> {
     let target_directory = portable_webview_data_directory()?;
@@ -152,17 +234,28 @@ fn migrate_legacy_webview_data(target_directory: &Path) -> Result<(), String> {
     let Some(local_data_dir) = dirs::data_local_dir() else {
         return Ok(());
     };
-    let source_directory = local_data_dir.join(APP_IDENTIFIER);
-    if !source_directory.is_dir() || same_path(&source_directory, target_directory) {
+    let legacy_sources = [
+        local_data_dir.join(LEGACY_APP_IDENTIFIER),
+        local_data_dir.join(ROBUSTLUO_LEGACY_APP_IDENTIFIER),
+    ];
+    let source_directory = legacy_sources
+        .iter()
+        .find(|path| path.is_dir() && !same_path(path, target_directory))
+        .cloned();
+    let Some(source_directory) = source_directory else {
+        let fallback = legacy_sources
+            .first()
+            .cloned()
+            .unwrap_or_else(|| local_data_dir.join(LEGACY_APP_IDENTIFIER));
         return write_webview_migration_state(
             &state_path,
             &WebviewMigrationState {
                 schema_version: 1,
                 completed: true,
-                source_directory: source_directory.to_string_lossy().to_string(),
+                source_directory: fallback.to_string_lossy().to_string(),
             },
         );
-    }
+    };
 
     copy_webview_directory_contents(&source_directory, target_directory)?;
     write_webview_migration_state(
@@ -243,7 +336,7 @@ mod tests {
     use std::fs;
 
     fn test_directory(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("lightc-runtime-{}-{}", name, std::process::id()))
+        std::env::temp_dir().join(format!("luoscope-runtime-{}-{}", name, std::process::id()))
     }
 
     #[test]
@@ -256,7 +349,7 @@ mod tests {
         fs::write(root.join(PORTABLE_MANIFEST_FILE), manifest_with_bom).unwrap();
 
         assert_eq!(
-            detect_distribution_channel(&root.join("LightC.exe")),
+            detect_distribution_channel(&root.join("LuoScope.exe")),
             DistributionChannel::Portable
         );
         let _ = fs::remove_dir_all(root);
@@ -269,7 +362,7 @@ mod tests {
         fs::write(root.join(PORTABLE_MARKER_FILE), "portable").unwrap();
 
         assert_eq!(
-            detect_distribution_channel(&root.join("LightC.exe")),
+            detect_distribution_channel(&root.join("LuoScope.exe")),
             DistributionChannel::Portable
         );
         let _ = fs::remove_dir_all(root);
@@ -282,7 +375,7 @@ mod tests {
         fs::write(root.join(PORTABLE_MANIFEST_FILE), "invalid").unwrap();
 
         assert_eq!(
-            detect_distribution_channel(&root.join("LightC.exe")),
+            detect_distribution_channel(&root.join("LuoScope.exe")),
             DistributionChannel::Installer
         );
         let _ = fs::remove_dir_all(root);

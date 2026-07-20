@@ -3,14 +3,13 @@
 // 支持智能路径溯源和文件类型深度分类
 // ============================================================================
 
-import { useState, useCallback, useRef, memo, useEffect } from 'react';
+import { useState, useCallback, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   MessageCircle,
   Trash2, 
-  Loader2, 
   Image, 
   FileText, 
   Share2,
@@ -29,6 +28,10 @@ import {
 } from 'lucide-react';
 import { ModuleCard } from '../ModuleCard';
 import { EmptyState } from '../EmptyState';
+import { EmptyScanAction } from '../EmptyScanAction';
+import { ModulePageContent } from '../ModulePageContent';
+import { ModuleScanPanel } from '../ModuleScanPanel';
+import { OperationProgressOverlay } from '../OperationProgressOverlay';
 import { useToast } from '../Toast';
 import { useModuleDashboard } from '../../contexts/DashboardContext';
 import {
@@ -47,6 +50,7 @@ import {
 } from '../../api/commands';
 import { formatSize } from '../../utils/format';
 import { shouldSkipInactivePageRender, type ModuleRenderProps } from './moduleProps';
+import { useOneClickScanListener } from '../../hooks/useOneClickScanListener';
 
 // ============================================================================
 // 分类配置
@@ -106,11 +110,8 @@ const riskLevelConfig: Record<RiskLevel, {
 // ============================================================================
 
 export function SocialCleanModule({ layoutMode = 'cards', isPageActive = true }: ModuleRenderProps) {
-  const { moduleState, expandedModule, setExpandedModule, updateModuleState, triggerHealthRefresh, oneClickScanTrigger } = useModuleDashboard('social');
+  const { moduleState, expandedModule, setExpandedModule, updateModuleState, triggerHealthRefresh } = useModuleDashboard('social');
   const { showToast } = useToast();
-
-  // 用于跟踪是否已处理过当前的一键扫描触发
-  const lastScanTriggerRef = useRef(0);
 
   // 本地状态
   const [scanResult, setScanResult] = useState<SocialScanResult | null>(null);
@@ -152,13 +153,7 @@ export function SocialCleanModule({ layoutMode = 'cards', isPageActive = true }:
     }
   }, [updateModuleState, setExpandedModule]);
 
-  // 监听一键扫描触发器
-  useEffect(() => {
-    if (oneClickScanTrigger > 0 && oneClickScanTrigger !== lastScanTriggerRef.current) {
-      lastScanTriggerRef.current = oneClickScanTrigger;
-      handleScan();
-    }
-  }, [oneClickScanTrigger, handleScan]);
+  useOneClickScanListener('social', handleScan);
 
   // 切换单个文件选中（只允许可删除的文件）
   const toggleFile = useCallback((file: SocialFileEntry) => {
@@ -284,40 +279,12 @@ export function SocialCleanModule({ layoutMode = 'cards', isPageActive = true }:
 
   return (
     <>
-      {/* 删除进度遮罩 */}
-      {createPortal(
-        <AnimatePresence>
-          {isDeleting && (
-            <motion.div
-              className="fixed inset-0 z-[9999] flex items-center justify-center"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18, ease: 'easeOut' }}
-            >
-              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-              <motion.div
-                className="relative bg-[var(--bg-card)] rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 max-w-sm mx-4"
-                initial={{ opacity: 0, scale: 0.96, y: 10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, y: 10 }}
-                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-              >
-                <div className="w-16 h-16 rounded-full bg-rose-500/10 flex items-center justify-center">
-                  <Loader2 className="w-8 h-8 text-rose-500 animate-spin" />
-                </div>
-                <div className="text-center">
-                  <h3 className="text-lg font-semibold text-[var(--fg-primary)]">正在清理缓存</h3>
-                  <p className="text-sm text-[var(--fg-muted)] mt-1">
-                    正在清理 {selectedStats.files} 个文件，请稍候...
-                  </p>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>,
-        document.body
-      )}
+      <OperationProgressOverlay
+        isOpen={isDeleting}
+        title="正在清理缓存"
+        description={`正在清理 ${selectedStats.files.toLocaleString()} 个文件，请稍候…`}
+        tone="brand"
+      />
 
       {/* 删除确认弹窗 */}
       <SocialDeleteConfirmModal
@@ -373,7 +340,18 @@ export function SocialCleanModule({ layoutMode = 'cards', isPageActive = true }:
         }
       >
         {/* 展开内容 */}
-        <div className="min-h-[300px]">
+        {layoutMode === 'pages' && moduleState.status === 'idle' ? (
+          <ModulePageContent layoutMode={layoutMode} centerIdle>
+            <EmptyState
+              page
+              icon={MessageCircle}
+              title="尚未检测社交缓存"
+              description="检测微信、QQ、钉钉、飞书等常见社交软件的缓存目录。"
+              action={<EmptyScanAction onClick={handleScan} />}
+            />
+          </ModulePageContent>
+        ) : (
+        <div className={layoutMode === 'pages' ? 'module-page-content module-page-content--filled' : 'min-h-[300px]'}>
           {/* 说明提示 */}
           {showTip && (
             <div className="mx-4 mt-4 mb-4 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 flex items-start gap-2 relative">
@@ -393,26 +371,13 @@ export function SocialCleanModule({ layoutMode = 'cards', isPageActive = true }:
             </div>
           )}
 
-          {/* 空状态 */}
-          {moduleState.status === 'idle' && (
-            <div className="p-4">
-              <EmptyState
-                icon={MessageCircle}
-                title="尚未检测社交缓存"
-                description="点击开始扫描，检测微信、QQ、钉钉、飞书等软件缓存。"
-              />
-            </div>
-          )}
-
           {/* 扫描中状态 */}
           {moduleState.status === 'scanning' && (
-            <div className="py-12 flex flex-col items-center justify-center text-center">
-              <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-3">
-                <Loader2 className="w-7 h-7 text-emerald-500 animate-spin" />
-              </div>
-              <p className="text-sm font-medium text-[var(--fg-secondary)]">正在扫描中...</p>
-              <p className="text-xs text-[var(--fg-muted)] mt-1">正在智能检索社交软件缓存目录</p>
-            </div>
+            <ModuleScanPanel
+              icon={MessageCircle}
+              title="正在扫描社交软件缓存"
+              description="正在智能检索微信、QQ、钉钉、飞书等常见社交软件的缓存目录"
+            />
           )}
 
           {/* 无结果状态 */}
@@ -545,6 +510,7 @@ export function SocialCleanModule({ layoutMode = 'cards', isPageActive = true }:
             );
           })}
         </div>
+        )}
       </ModuleCard>
 
       {/* 文件详情弹窗 */}

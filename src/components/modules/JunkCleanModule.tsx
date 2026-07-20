@@ -3,16 +3,20 @@
 // 在仪表盘中展示垃圾文件扫描和清理功能
 // ============================================================================
 
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { Loader2, Trash2 } from 'lucide-react';
+import { useState, useCallback, useMemo } from 'react';
+import { Trash2 } from 'lucide-react';
 import { ModuleCard } from '../ModuleCard';
 import { CategoryCard } from '../CategoryCard';
 import { ScanSummary } from '../ScanSummary';
 import { ConfirmDialog } from '../ConfirmDialog';
+import { OperationProgressOverlay } from '../OperationProgressOverlay';
 import { EmptyState } from '../EmptyState';
+import { EmptyScanAction } from '../EmptyScanAction';
+import { ModulePageContent } from '../ModulePageContent';
+import { ModuleScanPanel } from '../ModuleScanPanel';
 import { useToast } from '../Toast';
 import { useModuleDashboard } from '../../contexts/DashboardContext';
+import { useOneClickScanListener } from '../../hooks/useOneClickScanListener';
 import { scanJunkFiles, enhancedDeleteFiles, recordCleanupAction, type EnhancedDeleteResult, type CleanupLogEntryInput } from '../../api/commands';
 import { formatSize } from '../../utils/format';
 import type { ScanResult, FileInfo } from '../../types';
@@ -23,11 +27,8 @@ import { shouldSkipInactivePageRender, type ModuleRenderProps } from './modulePr
 // ============================================================================
 
 export function JunkCleanModule({ layoutMode = 'cards', isPageActive = true }: ModuleRenderProps) {
-  const { moduleState, expandedModule, setExpandedModule, updateModuleState, triggerHealthRefresh, oneClickScanTrigger } = useModuleDashboard('junk');
+  const { moduleState, expandedModule, setExpandedModule, updateModuleState, triggerHealthRefresh } = useModuleDashboard('junk');
   const { showToast } = useToast();
-
-  // 用于跟踪是否已处理过当前的一键扫描触发
-  const lastScanTriggerRef = useRef(0);
 
   // 本地状态
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -86,13 +87,7 @@ export function JunkCleanModule({ layoutMode = 'cards', isPageActive = true }: M
     }
   }, [updateModuleState, setExpandedModule]);
 
-  // 监听一键扫描触发器
-  useEffect(() => {
-    if (oneClickScanTrigger > 0 && oneClickScanTrigger !== lastScanTriggerRef.current) {
-      lastScanTriggerRef.current = oneClickScanTrigger;
-      handleScan();
-    }
-  }, [oneClickScanTrigger, handleScan]);
+  useOneClickScanListener('junk', handleScan);
 
   // 执行删除
   const handleDelete = useCallback(async () => {
@@ -281,27 +276,12 @@ export function JunkCleanModule({ layoutMode = 'cards', isPageActive = true }: M
 
   return (
     <>
-      {/* 删除进度遮罩 - 保留轻量旋转反馈，但避免恢复高成本的全屏背景模糊。 */}
-      {isDeleting && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black/45 flex items-center justify-center">
-          <div className="bg-[var(--bg-card)] rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 max-w-sm mx-4">
-            <div className="w-16 h-16 rounded-full bg-rose-500/10 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 text-rose-500 animate-spin" />
-            </div>
-            <div className="text-center">
-              <h3 className="text-lg font-semibold text-[var(--fg-primary)]">正在清理垃圾文件</h3>
-              <p className="text-sm text-[var(--fg-muted)] mt-1">
-                正在删除 {selectedPaths.size} 个文件，请稍候...
-              </p>
-            </div>
-            <div className="w-full h-2 bg-[var(--bg-hover)] rounded-full overflow-hidden">
-              <div className="h-full bg-rose-500 rounded-full" style={{ width: '100%' }} />
-            </div>
-            <p className="text-xs text-[var(--fg-faint)]">请勿关闭窗口</p>
-          </div>
-        </div>,
-        document.body
-      )}
+      <OperationProgressOverlay
+        isOpen={isDeleting}
+        title="正在清理垃圾文件"
+        description={`正在删除 ${selectedPaths.size.toLocaleString()} 个文件，请稍候…`}
+        tone="brand"
+      />
 
       {/* 删除确认弹窗 */}
       <ConfirmDialog
@@ -335,39 +315,41 @@ export function JunkCleanModule({ layoutMode = 'cards', isPageActive = true }: M
         error={moduleState.error}
         headerExtra={
           scanResult && scanResult.total_file_count > 0 && (
-            <div className="flex items-center gap-2">
+            <>
+              <div className="module-toolbar-segment">
+                <button type="button" onClick={() => toggleAllSelection(true)} className="module-toolbar-link">
+                  全选
+                </button>
+                <button type="button" onClick={() => toggleAllSelection(false)} className="module-toolbar-link">
+                  取消
+                </button>
+              </div>
               <button
-                onClick={() => toggleAllSelection(true)}
-                className="text-xs text-[var(--fg-muted)] hover:text-emerald-600 transition"
-              >
-                全选
-              </button>
-              <button
-                onClick={() => toggleAllSelection(false)}
-                className="text-xs text-[var(--fg-muted)] hover:text-[var(--fg-secondary)] transition"
-              >
-                取消
-              </button>
-              <button
+                type="button"
                 onClick={() => setShowDeleteConfirm(true)}
                 disabled={selectedPaths.size === 0}
-                className={`
-                  flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all
-                  ${selectedPaths.size === 0
-                    ? 'bg-[var(--bg-hover)] text-[var(--fg-faint)] cursor-not-allowed'
-                    : 'bg-rose-500 text-white hover:bg-rose-600'
-                  }
-                `}
+                className={`module-toolbar-danger ${selectedPaths.size === 0 ? 'module-toolbar-danger-disabled' : ''}`}
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                清理 ({selectedPaths.size})
+                <Trash2 className="h-3.5 w-3.5" />
+                清理 {selectedPaths.size > 0 ? selectedPaths.size : ''}
               </button>
-            </div>
+            </>
           )
         }
       >
-        {/* 展开内容 */}
-        <div className="p-4 space-y-3">
+        {/* 展开内容：页面模式 idle 时不包 p-4，避免圆角卡片底部露出白条 */}
+        {layoutMode === 'pages' && moduleState.status === 'idle' && !scanResult ? (
+          <ModulePageContent layoutMode={layoutMode} centerIdle>
+            <EmptyState
+              page
+              icon={Trash2}
+              title="尚未扫描垃圾文件"
+              description="查找系统缓存、临时文件和日志等可清理内容。"
+              action={<EmptyScanAction onClick={handleScan} />}
+            />
+          </ModulePageContent>
+        ) : (
+        <div className={layoutMode === 'pages' ? 'module-page-content module-page-content--filled' : 'p-4 space-y-3'}>
           {/* 扫描结果摘要 */}
           {scanResult && (
             <ScanSummary
@@ -405,14 +387,15 @@ export function JunkCleanModule({ layoutMode = 'cards', isPageActive = true }: M
                 />
               )}
             </div>
-          ) : moduleState.status === 'idle' ? (
-            <EmptyState
+          ) : moduleState.status === 'scanning' ? (
+            <ModuleScanPanel
               icon={Trash2}
-              title="尚未扫描垃圾文件"
-              description="点击开始扫描，查找系统缓存、临时文件和日志等可清理内容。"
+              title="正在扫描垃圾文件"
+              description="正在并行检查系统缓存、临时文件、回收站与日志等常见垃圾分类"
             />
           ) : null}
         </div>
+        )}
       </ModuleCard>
     </>
   );

@@ -1,5 +1,5 @@
-# ============================================================================
-# LightC 自动发布工作流
+﻿# ============================================================================
+# LuoScope 自动发布工作流
 # 当推送 tag (v*) 时自动构建并发布到 GitHub Releases
 # ============================================================================
 
@@ -50,16 +50,18 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'LightC v2.12.2'
+          releaseName: 'LuoScope v2.12.3'
           releaseBody: |
             ## 更新内容
-            - 便携版配置、运行数据和 WebView2 界面数据跟随程序目录保存
-            - 兼容旧版 AppData 数据、旧便携 marker 和旧配置文件
-            - 数据管理设置页支持中间省略配置路径并一键定位配置文件
-            - 驱动检测 Windows 10 枚举兼容：支持中文系统字段、字段名与冒号之间的空格，以及无 BOM UTF-16 输出
-            - 应用图标补充 48x48 图标
+            - **垃圾软件清理（新模块）**：识别常见捆绑软件并调用官方卸载程序
+            - **分栏布局模式**：设置 → 通用新增第三种布局，左侧模块状态总览 + 右侧专注操作
+            - **品牌更名为 LuoScope**：可执行文件、安装包、数据目录与旧版 LightC 自动迁移兼容
+            - **启动屏美化**：全幅毛玻璃 + 底部进度 Dock，去掉重复胶囊/badge
+            - **磁盘变化分析引导区美化**、**顶栏存储空间重构**、**管理员一键提权**
+            - **开发缓存迁移到 D 盘**：含 `setup-d-drive-cache.ps1` 一键脚本，防止 Cursor 沙盒占满 C 盘
+            - **Aurora UI 视觉升级**、**高端过渡动效**、**模块扫描态统一美化**
 
-            请查看 [CHANGELOG.md](https://github.com/Chunyu33/light-c/blob/main/CHANGELOG.md) 了解详细版本变更。
+            请查看 [CHANGELOG.md](https://github.com/RobustLuo/light-c/blob/main/CHANGELOG.md) 了解详细版本变更。
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
@@ -72,15 +74,15 @@ jobs:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          $ReleaseExe = "src-tauri\target\release\LightC.exe"
-          $PreservedInstallerExe = "LightC_installer_runtime.exe"
+          $ReleaseExe = "src-tauri\target\release\LuoScope.exe"
+          $PreservedInstallerExe = "LuoScope_installer_runtime.exe"
 
           if (-not (Test-Path $ReleaseExe)) {
-            Write-Host "Error: normal installer runtime LightC.exe not found" -ForegroundColor Red
+            Write-Host "Error: normal installer runtime LuoScope.exe not found" -ForegroundColor Red
             exit 1
           }
 
-          # 必须在 WebView2 离线包二次构建前签名；后续 tauri build 会覆盖 target\release\LightC.exe。
+          # 必须在 WebView2 离线包二次构建前签名；后续 tauri build 会覆盖 target\release\LuoScope.exe。
           Copy-Item $ReleaseExe $PreservedInstallerExe -Force
           $SignatureOutput = npx tauri signer sign $ReleaseExe
           if ($LASTEXITCODE -ne 0) {
@@ -103,8 +105,8 @@ jobs:
             }
           }
 
-          $SignatureBase64 | Out-File -FilePath "LightC_installer_exe.sig" -Encoding utf8 -NoNewline
-          Write-Host "  Created: LightC_installer_exe.sig" -ForegroundColor Green
+          $SignatureBase64 | Out-File -FilePath "LuoScope_installer_exe.sig" -Encoding utf8 -NoNewline
+          Write-Host "  Created: LuoScope_installer_exe.sig" -ForegroundColor Green
 
       # tauri-action 已创建 Release 并上传了 NSIS 安装包
       # 以下额外打包 WebView2 离线安装包和绿色便携版并上传到同一个 Release
@@ -118,7 +120,7 @@ jobs:
           TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           $ConfigPath = "tauri.webview2-offline.conf.json"
-          $OutputName = "LightC_webview2_offline_x64.exe"
+          $OutputName = "LuoScope_webview2_offline_x64.exe"
 
           Write-Host "Creating WebView2 offline installer..." -ForegroundColor Cyan
 
@@ -155,9 +157,9 @@ jobs:
           Copy-Item $Installer.FullName $OutputName -Force
           Write-Host "  Created: $OutputName" -ForegroundColor Green
 
-          $OfflineRuntimeExe = "src-tauri\target\release\LightC.exe"
+          $OfflineRuntimeExe = "src-tauri\target\release\LuoScope.exe"
           if (-not (Test-Path $OfflineRuntimeExe)) {
-            Write-Host "Error: WebView2 offline runtime LightC.exe not found" -ForegroundColor Red
+            Write-Host "Error: WebView2 offline runtime LuoScope.exe not found" -ForegroundColor Red
             exit 1
           }
 
@@ -182,8 +184,8 @@ jobs:
             }
           }
 
-          $SignatureBase64 | Out-File -FilePath "LightC_webview2_offline_exe.sig" -Encoding utf8 -NoNewline
-          Write-Host "  Created: LightC_webview2_offline_exe.sig" -ForegroundColor Green
+          $SignatureBase64 | Out-File -FilePath "LuoScope_webview2_offline_exe.sig" -Encoding utf8 -NoNewline
+          Write-Host "  Created: LuoScope_webview2_offline_exe.sig" -ForegroundColor Green
           echo "webview2_offline_installer=$OutputName" >> $env:GITHUB_OUTPUT
         id: webview2_offline
 
@@ -197,33 +199,33 @@ jobs:
         run: |
           $ReleaseDir = "src-tauri\target\release"
           $PortableDir = "portable_temp"
-          $ZipName = "LightC_portable_x64.zip"
-          $PreservedInstallerExe = "LightC_installer_runtime.exe"
+          $ZipName = "LuoScope_portable_x64.zip"
+          $PreservedInstallerExe = "LuoScope_installer_runtime.exe"
 
           Write-Host "Creating portable package..." -ForegroundColor Cyan
 
           New-Item -ItemType Directory -Path $PortableDir -Force | Out-Null
 
           # 主程序
-          $PortableSourceExe = if (Test-Path $PreservedInstallerExe) { $PreservedInstallerExe } else { "$ReleaseDir\LightC.exe" }
+          $PortableSourceExe = if (Test-Path $PreservedInstallerExe) { $PreservedInstallerExe } else { "$ReleaseDir\LuoScope.exe" }
           if (-not (Test-Path $PortableSourceExe)) {
-            Write-Host "Error: LightC.exe not found" -ForegroundColor Red
+            Write-Host "Error: LuoScope.exe not found" -ForegroundColor Red
             exit 1
           }
           # 便携版使用常规安装版同一份 runtime exe，避免 WebView2 离线包二次构建后的 exe 被误打进便携包。
-          Copy-Item $PortableSourceExe "$PortableDir\LightC.exe" -Force
-          Write-Host "  Copied: LightC.exe" -ForegroundColor White
+          Copy-Item $PortableSourceExe "$PortableDir\LuoScope.exe" -Force
+          Write-Host "  Copied: LuoScope.exe" -ForegroundColor White
 
           # 旧 marker 保留给旧版本兼容；新版同时读取带 schema 的 manifest 来决定数据目录布局。
-          Set-Content -Path "$PortableDir\LightC.portable" -Value "portable" -Encoding UTF8
-          Write-Host "  Created: LightC.portable" -ForegroundColor White
+          Set-Content -Path "$PortableDir\LuoScope.portable" -Value "portable" -Encoding UTF8
+          Write-Host "  Created: LuoScope.portable" -ForegroundColor White
           $PortableManifest = [ordered]@{
             schema_version = 1
             mode = "portable"
             data_layout = "relative"
           }
-          $PortableManifest | ConvertTo-Json | Out-File -FilePath "$PortableDir\LightC.portable.json" -Encoding utf8
-          Write-Host "  Created: LightC.portable.json" -ForegroundColor White
+          $PortableManifest | ConvertTo-Json | Out-File -FilePath "$PortableDir\LuoScope.portable.json" -Encoding utf8
+          Write-Host "  Created: LuoScope.portable.json" -ForegroundColor White
 
           # DLL 文件
           $DllFiles = Get-ChildItem -Path $ReleaseDir -Filter "*.dll" -ErrorAction SilentlyContinue
@@ -242,10 +244,9 @@ jobs:
 
           # 官方下载渠道不写死在前端，随 Release 上传 download.json，便于后续调整网盘地址。
           $DownloadConfig = [ordered]@{
-            githubReleasesUrl = "https://github.com/Chunyu33/light-c/releases"
-            netDiskUrl = "https://pan.quark.cn/s/bce8f722bf33"
-            bilibiliUrl = "https://space.bilibili.com/387797235"
-            douyinUrl = "https://www.douyin.com/search/Evan%E7%9A%84%E5%83%8F%E7%B4%A0%E7%A9%BA%E9%97%B4"
+            githubReleasesUrl = "https://github.com/RobustLuo/light-c/releases"
+            bilibiliUrl = "https://github.com/RobustLuo"
+            douyinUrl = "https://github.com/RobustLuo"
           }
           $DownloadConfig | ConvertTo-Json | Out-File -FilePath "download.json" -Encoding utf8
           Write-Host "  Created: download.json" -ForegroundColor Green
@@ -254,13 +255,13 @@ jobs:
           Compress-Archive -Path "$PortableDir\*" -DestinationPath $ZipName -Force
           Write-Host "  Created: $ZipName" -ForegroundColor Green
 
-          # 签名对象必须是最终便携包内的 LightC.exe；manifest 不参与 exe 签名，避免改变现有校验链路。
-          $SignatureOutput = npx tauri signer sign "$PortableDir\LightC.exe"
+          # 签名对象必须是最终便携包内的 LuoScope.exe；manifest 不参与 exe 签名，避免改变现有校验链路。
+          $SignatureOutput = npx tauri signer sign "$PortableDir\LuoScope.exe"
           if ($LASTEXITCODE -ne 0) {
             Write-Host "Error: portable exe signing failed" -ForegroundColor Red
             exit $LASTEXITCODE
           }
-          $GeneratedSigPath = "$PortableDir\LightC.exe.sig"
+          $GeneratedSigPath = "$PortableDir\LuoScope.exe.sig"
           if (Test-Path $GeneratedSigPath) {
             $SignatureText = Get-Content -Raw -Path $GeneratedSigPath
             if ($SignatureText.TrimStart().StartsWith("untrusted comment:")) {
@@ -278,8 +279,8 @@ jobs:
               exit 1
             }
           }
-          $SignatureBase64 | Out-File -FilePath "LightC_portable_exe.sig" -Encoding utf8 -NoNewline
-          Write-Host "  Created: LightC_portable_exe.sig" -ForegroundColor Green
+          $SignatureBase64 | Out-File -FilePath "LuoScope_portable_exe.sig" -Encoding utf8 -NoNewline
+          Write-Host "  Created: LuoScope_portable_exe.sig" -ForegroundColor Green
 
           # 清理临时目录
           Remove-Item $PortableDir -Recurse -Force
@@ -291,12 +292,12 @@ jobs:
       - name: Upload extra assets to release
         shell: pwsh
         run: |
-          $ZipPath = "LightC_portable_x64.zip"
-          $InstallerSigPath = "LightC_installer_exe.sig"
-          $WebView2OfflineSigPath = "LightC_webview2_offline_exe.sig"
-          $PortableSigPath = "LightC_portable_exe.sig"
+          $ZipPath = "LuoScope_portable_x64.zip"
+          $InstallerSigPath = "LuoScope_installer_exe.sig"
+          $WebView2OfflineSigPath = "LuoScope_webview2_offline_exe.sig"
+          $PortableSigPath = "LuoScope_portable_exe.sig"
           $DownloadConfigPath = "download.json"
-          $WebView2OfflineInstallerPath = "LightC_webview2_offline_x64.exe"
+          $WebView2OfflineInstallerPath = "LuoScope_webview2_offline_x64.exe"
           if ((Test-Path $ZipPath) -and (Test-Path $InstallerSigPath) -and (Test-Path $WebView2OfflineSigPath) -and (Test-Path $PortableSigPath) -and (Test-Path $DownloadConfigPath) -and (Test-Path $WebView2OfflineInstallerPath)) {
             Write-Host "Uploading extra assets to release..." -ForegroundColor Cyan
             gh release upload ${{ github.ref_name }} $ZipPath $InstallerSigPath $WebView2OfflineSigPath $PortableSigPath $DownloadConfigPath $WebView2OfflineInstallerPath --clobber

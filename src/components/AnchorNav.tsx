@@ -1,32 +1,27 @@
 // ============================================================================
-// 模块侧边导航组件
-// 卡片布局下执行锚点滚动；页面布局下切换当前模块页面。
+// 左侧模块导航栏 — 固定毛玻璃侧栏，替代原悬浮图标展开菜单
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Navigation, PanelLeft } from 'lucide-react';
 import { APP_MODULE_META, type AppModuleId } from '../config/moduleMeta';
 import { useSettings } from '../contexts';
+import { isSingleModuleLayout } from '../utils/layoutMode';
+import { useSlidingNavIndicator } from '../hooks/useSlidingNavIndicator';
 
 interface AnchorNavProps {
-  /** 滚动容器的 ref；卡片模式下用于监听滚动和执行滚动。 */
   scrollContainerRef: React.RefObject<HTMLElement | null>;
 }
 
 export function AnchorNav({ scrollContainerRef }: AnchorNavProps) {
   const { settings, updateSettings } = useSettings();
-  const [isHovered, setIsHovered] = useState(false);
   const [activeAnchorId, setActiveAnchorId] = useState<AppModuleId>(settings.activeModuleId);
-  const hoverTimeoutRef = useRef<number | null>(null);
-  // 点击锁定用于平滑滚动期间保持高亮，避免滚动事件把 active 状态短暂切到相邻模块。
   const clickLockRef = useRef<{ id: AppModuleId; timeout: number } | null>(null);
   const isPageMode = settings.layoutMode === 'pages';
-  const activeId = isPageMode ? settings.activeModuleId : activeAnchorId;
-  const TriggerIcon = isPageMode ? PanelLeft : Navigation;
+  const activeId = isSingleModuleLayout(settings.layoutMode) ? settings.activeModuleId : activeAnchorId;
+  const { navRef, registerItem, indicator } = useSlidingNavIndicator(activeId);
 
   const handleNavigate = useCallback((moduleId: AppModuleId) => {
     if (isPageMode) {
-      // 页面模式只切换全局 activeModuleId，模块本身仍常驻挂载，避免扫描结果和弹窗状态丢失。
       updateSettings({ activeModuleId: moduleId });
       return;
     }
@@ -54,6 +49,7 @@ export function AnchorNav({ scrollContainerRef }: AnchorNavProps) {
     container.scrollTo({ top: scrollTop, behavior: 'smooth' });
   }, [isPageMode, scrollContainerRef, updateSettings]);
 
+  // 卡片模式下根据滚动位置高亮当前模块
   useEffect(() => {
     if (isPageMode) return;
 
@@ -93,24 +89,8 @@ export function AnchorNav({ scrollContainerRef }: AnchorNavProps) {
     return () => container.removeEventListener('scroll', handleScroll);
   }, [isPageMode, scrollContainerRef, settings.activeModuleId]);
 
-  const handleMouseEnter = useCallback(() => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-    }
-    setIsHovered(true);
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    hoverTimeoutRef.current = window.setTimeout(() => {
-      setIsHovered(false);
-    }, 150);
-  }, []);
-
   useEffect(() => {
     return () => {
-      if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current);
-      }
       if (clickLockRef.current?.timeout) {
         clearTimeout(clickLockRef.current.timeout);
       }
@@ -118,64 +98,57 @@ export function AnchorNav({ scrollContainerRef }: AnchorNavProps) {
   }, []);
 
   return (
-    <div
-      className="fixed left-3 top-1/2 -translate-y-1/2 z-50"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      <div
-        className={`
-          flex items-center justify-center w-8 h-8 rounded-lg
-          bg-[var(--bg-card)] border border-[var(--border-default)]
-          shadow-lg cursor-pointer
-          transition-all duration-300 ease-out
-          hover:border-[var(--brand-green)] hover:shadow-[var(--brand-green)]/20
-          ${isHovered ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'}
-        `}
-      >
-        <TriggerIcon className="w-4 h-4 text-[var(--text-muted)]" />
+    <aside className="sidebar-nav shrink-0 flex flex-col border-r border-[var(--border-color)] glass-panel">
+      {/* 侧栏标题区：与主内容区顶栏形成视觉对齐 */}
+      <div className="shrink-0 px-4 pt-4 pb-3 border-b border-[var(--border-muted)]">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
+          功能模块
+        </p>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">
+          {settings.layoutMode === 'split' ? '状态总览（分栏）' : isPageMode ? '单页切换' : '锚点滚动'}
+        </p>
       </div>
 
-      <div
-        className={`
-          absolute left-0 top-1/2 -translate-y-1/2
-          bg-[var(--bg-card)] border border-[var(--border-default)]
-          rounded-xl shadow-xl overflow-hidden
-          transition-all duration-300 ease-out
-          ${isHovered
-            ? 'opacity-100 scale-100 translate-x-0'
-            : 'opacity-0 scale-95 -translate-x-2 pointer-events-none'
-          }
-        `}
+      {/* 模块列表：模块较多时侧栏内部滚动，避免挤压主内容 */}
+      <nav
+        ref={navRef}
+        className="sidebar-nav-list nav-with-indicator relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-2"
       >
-        <div className="py-1.5">
-          {APP_MODULE_META.map((moduleConfig) => {
-            const Icon = moduleConfig.icon;
-            const isActive = activeId === moduleConfig.id;
+        <span
+          className="nav-sliding-indicator"
+          aria-hidden
+          style={{
+            transform: `translateY(${indicator.top}px)`,
+            height: indicator.height,
+            opacity: indicator.opacity,
+          }}
+        />
+        {APP_MODULE_META.map((moduleConfig) => {
+          const Icon = moduleConfig.icon;
+          const isActive = activeId === moduleConfig.id;
 
-            return (
-              <button
-                key={moduleConfig.id}
-                onClick={() => handleNavigate(moduleConfig.id)}
-                className={`
-                  w-full flex items-center gap-2.5 px-3 py-2 text-left
-                  transition-all duration-200
-                  ${isActive
-                    ? 'bg-[var(--brand-green)]/10 text-[var(--brand-green)]'
-                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
-                  }
-                `}
-              >
-                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[var(--brand-green)]' : ''}`} />
-                <span className="text-xs font-medium whitespace-nowrap">{moduleConfig.label}</span>
-                {isActive && (
-                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--brand-green)]" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </div>
+          return (
+            <button
+              key={moduleConfig.id}
+              ref={(node) => registerItem(moduleConfig.id, node)}
+              type="button"
+              onClick={() => handleNavigate(moduleConfig.id)}
+              title={moduleConfig.label}
+              className={`app-nav-item group ${isActive ? 'app-nav-item-active' : 'text-[var(--text-secondary)]'}`}
+            >
+              <span className={`app-nav-icon ${isActive ? 'app-nav-icon-active' : ''}`}>
+                <Icon className="w-4 h-4" />
+              </span>
+              <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight truncate">
+                {moduleConfig.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* 底部留白，避免最后一项贴边 */}
+      <div className="shrink-0 h-2" />
+    </aside>
   );
 }

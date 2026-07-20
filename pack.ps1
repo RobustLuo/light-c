@@ -1,13 +1,54 @@
 $ErrorActionPreference = "Stop"
 
+# 打包同样走 D 盘 Cargo / 临时目录，避免 C 盘链接失败
+. (Join-Path $PSScriptRoot "scripts\set-dev-cache-env.ps1")
+
+# 解析 Cargo release 目录：优先读 config.toml，避免沙盒环境改写 CARGO_TARGET_DIR
+function Resolve-CargoReleaseDir {
+    param([string]$Root)
+
+    $cargoConfigPath = Join-Path $Root "src-tauri\.cargo\config.toml"
+    if (Test-Path $cargoConfigPath) {
+        $content = [System.IO.File]::ReadAllText($cargoConfigPath, [System.Text.Encoding]::UTF8)
+        if ($content -match 'target-dir\s*=\s*"([^"]+)"') {
+            $targetRoot = $matches[1] -replace '/', [IO.Path]::DirectorySeparatorChar
+            $env:CARGO_TARGET_DIR = $targetRoot
+            return Join-Path $targetRoot "release"
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:CARGO_TARGET_DIR)) {
+        return Join-Path $env:CARGO_TARGET_DIR "release"
+    }
+
+    return Join-Path $Root "src-tauri\target\release"
+}
+
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  LightC Release Build Script" -ForegroundColor Cyan
+Write-Host "  LuoScope Release Build Script" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 $ProjectRoot = $PSScriptRoot
 $TauriConfigPath = Join-Path $ProjectRoot "src-tauri\tauri.conf.json"
-$PrivateKeyPath = Join-Path $ProjectRoot ".tauri\lightc.key"
+
+# 签名私钥随品牌更名改为 luoscope.key；本地若仍为旧文件名可继续读取。
+function Resolve-SigningPrivateKeyPath {
+    param([string]$Root)
+
+    $Candidates = @(
+        (Join-Path $Root ".tauri\luoscope.key"),
+        (Join-Path $Root ".tauri\lightc.key")
+    )
+    foreach ($Candidate in $Candidates) {
+        if (Test-Path $Candidate) {
+            return $Candidate
+        }
+    }
+    return $Candidates[0]
+}
+
+$PrivateKeyPath = Resolve-SigningPrivateKeyPath -Root $ProjectRoot
 
 function Convert-ToReleaseSignature {
     param([string]$SignatureText)
@@ -114,11 +155,33 @@ Write-Host ""
 
 Write-Host "[3/4] Packaging artifacts..." -ForegroundColor Yellow
 
-$ReleaseDir = Join-Path $ProjectRoot "src-tauri\target\release"
+function Resolve-ReleaseDir {
+    param([string]$Root)
+
+    # 兼容 D 盘 cargo-target、沙盒重定向、以及默认 src-tauri/target
+    $candidateRoots = @(
+        $env:CARGO_TARGET_DIR,
+        (Join-Path "D:\DevCache\LuoScope" "cargo-target"),
+        (Join-Path $Root "src-tauri\target")
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+    foreach ($targetRoot in $candidateRoots) {
+        $releaseDir = Join-Path $targetRoot "release"
+        $exePath = Join-Path $releaseDir "LuoScope.exe"
+        if (Test-Path $exePath) {
+            Write-Host "  Using release dir: $releaseDir" -ForegroundColor Gray
+            return $releaseDir
+        }
+    }
+
+    throw "Cannot find LuoScope.exe in cargo target release directories"
+}
+
+$ReleaseDir = Resolve-ReleaseDir -Root $ProjectRoot
 $BundleMsiDir = Join-Path $ReleaseDir "bundle\msi"
 $BundleNsisDir = Join-Path $ReleaseDir "bundle\nsis"
 $DistReleaseDir = Join-Path $ProjectRoot "dist_release"
-$PortableDir = Join-Path $DistReleaseDir ("LightC_" + $Version + "_Portable")
+$PortableDir = Join-Path $DistReleaseDir ("LuoScope_" + $Version + "_Portable")
 
 if (Test-Path $DistReleaseDir) {
     Write-Host "  Cleaning old dist_release..." -ForegroundColor Gray
@@ -132,7 +195,7 @@ $MsiFiles = Get-ChildItem -Path $BundleMsiDir -Filter "*.msi" -ErrorAction Silen
 if ($null -eq $MsiFiles -or $MsiFiles.Count -eq 0) {
     Write-Host "  Warning: No MSI found, skipping..." -ForegroundColor Yellow
 } else {
-    $TargetMsiName = "LightC_" + $Version + "_x64_Installer.msi"
+    $TargetMsiName = "LuoScope_" + $Version + "_x64_Installer.msi"
     Copy-Item $MsiFiles[0].FullName (Join-Path $DistReleaseDir $TargetMsiName) -Force
     Write-Host "    Copied: $TargetMsiName" -ForegroundColor White
 }
@@ -142,7 +205,7 @@ $NsisFiles = Get-ChildItem -Path $BundleNsisDir -Filter "*.exe" -ErrorAction Sil
 if ($null -eq $NsisFiles -or $NsisFiles.Count -eq 0) {
     Write-Host "  Warning: No NSIS installer found, skipping..." -ForegroundColor Yellow
 } else {
-    $TargetNsisName = "LightC_" + $Version + "_x64_Setup.exe"
+    $TargetNsisName = "LuoScope_" + $Version + "_x64_Setup.exe"
     Copy-Item $NsisFiles[0].FullName (Join-Path $DistReleaseDir $TargetNsisName) -Force
     Write-Host "    Copied: $TargetNsisName" -ForegroundColor White
 
@@ -157,29 +220,29 @@ if ($null -eq $NsisFiles -or $NsisFiles.Count -eq 0) {
 Write-Host "  Processing Portable version..." -ForegroundColor Gray
 New-Item -ItemType Directory -Path $PortableDir -Force | Out-Null
 
-$ExePath = Join-Path $ReleaseDir "LightC.exe"
+$ExePath = Join-Path $ReleaseDir "LuoScope.exe"
 if (-not (Test-Path $ExePath)) {
-    Write-Host "Error: Cannot find LightC.exe at $ExePath" -ForegroundColor Red
+    Write-Host "Error: Cannot find LuoScope.exe at $ExePath" -ForegroundColor Red
     exit 1
 }
 Copy-Item $ExePath $PortableDir -Force
-Write-Host "    Copied: LightC.exe" -ForegroundColor White
+Write-Host "    Copied: LuoScope.exe" -ForegroundColor White
 
 # 旧 marker 继续保留；manifest 让新版程序能够校验数据目录采用相对路径。
-Set-Content -Path (Join-Path $PortableDir "LightC.portable") -Value "portable" -Encoding UTF8
+Set-Content -Path (Join-Path $PortableDir "LuoScope.portable") -Value "portable" -Encoding UTF8
 $PortableManifest = [ordered]@{
     schema_version = 1
     mode = "portable"
     data_layout = "relative"
 }
-$PortableManifest | ConvertTo-Json | Out-File -FilePath (Join-Path $PortableDir "LightC.portable.json") -Encoding utf8
+$PortableManifest | ConvertTo-Json | Out-File -FilePath (Join-Path $PortableDir "LuoScope.portable.json") -Encoding utf8
 Write-Host "    Created: portable mode manifest" -ForegroundColor White
 
 # 安装版和便携版校验的都是当前运行时 exe，分别输出固定资产名供完整性校验下载。
-$InstallerSignaturePath = Join-Path $DistReleaseDir "LightC_installer_exe.sig"
-$PortableSignaturePath = Join-Path $DistReleaseDir "LightC_portable_exe.sig"
+$InstallerSignaturePath = Join-Path $DistReleaseDir "LuoScope_installer_exe.sig"
+$PortableSignaturePath = Join-Path $DistReleaseDir "LuoScope_portable_exe.sig"
 New-ExeSignatureAsset -ExecutablePath $ExePath -OutputPath $InstallerSignaturePath
-New-ExeSignatureAsset -ExecutablePath (Join-Path $PortableDir "LightC.exe") -OutputPath $PortableSignaturePath
+New-ExeSignatureAsset -ExecutablePath (Join-Path $PortableDir "LuoScope.exe") -OutputPath $PortableSignaturePath
 
 $ResourcesDir = Join-Path $ReleaseDir "resources"
 if (Test-Path $ResourcesDir) {
@@ -198,7 +261,7 @@ if ($null -ne $DllFiles) {
     }
 }
 
-$ZipFileName = "LightC_" + $Version + "_x64_Portable.zip"
+$ZipFileName = "LuoScope_" + $Version + "_x64_Portable.zip"
 $ZipFilePath = Join-Path $DistReleaseDir $ZipFileName
 Write-Host "  Compressing portable version..." -ForegroundColor Gray
 Compress-Archive -Path $PortableDir -DestinationPath $ZipFilePath -Force

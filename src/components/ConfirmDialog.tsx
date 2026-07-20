@@ -2,9 +2,10 @@
 // 确认对话框组件 - 用于清理前的二次确认
 // ============================================================================
 
-import { memo, useState, useEffect, useRef } from 'react';
+import { memo, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, X } from 'lucide-react';
+import { useOverlayAnimation } from '../hooks/useOverlayAnimation';
 
 interface ConfirmDialogProps {
   /** 是否显示 */
@@ -27,6 +28,15 @@ interface ConfirmDialogProps {
   isDanger?: boolean;
 }
 
+/** 将「免责声明：正文」拆成标题 + 正文，提升可读性与排版层次 */
+function splitNoticeText(warning: string): { label: string; body: string } {
+  const matched = warning.match(/^免责声明[：:]\s*([\s\S]*)$/);
+  if (matched) {
+    return { label: '免责声明', body: matched[1] };
+  }
+  return { label: '请注意', body: warning };
+}
+
 export const ConfirmDialog = memo(function ConfirmDialog({
   isOpen,
   title,
@@ -38,95 +48,77 @@ export const ConfirmDialog = memo(function ConfirmDialog({
   onCancel,
   isDanger = false,
 }: ConfirmDialogProps) {
-  const [isVisible, setIsVisible] = useState(false);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const enteredRef = useRef(false);
-  if (isVisible) enteredRef.current = true;
+  const { isVisible, shouldRender, enteredRef } = useOverlayAnimation(isOpen, { exitDuration: 260 });
+  const notice = useMemo(() => (warning ? splitNoticeText(warning) : null), [warning]);
 
-  useEffect(() => {
-    if (isOpen) {
-      setIsAnimating(true);
-      setIsVisible(true);
-    } else {
-      setIsVisible(false);
-      const timer = setTimeout(() => {
-        setIsAnimating(false);
-      }, 190);
-      return () => clearTimeout(timer);
-    }
-  }, [isOpen]);
-
-  if (!isOpen && !isAnimating) return null;
+  if (!shouldRender) return null;
 
   return createPortal(
     // 确认弹窗需要压过设置页和模块详情弹窗，避免危险操作确认被父级弹窗遮住。
-    <div className="fixed inset-0 z-[10050] flex items-center justify-center">
-      {/* 遮罩层 */}
-      <div 
-        className={`absolute inset-0 bg-black/50 backdrop-blur-sm ${isVisible ? 'modal-overlay-in' : enteredRef.current ? 'modal-overlay-out' : 'opacity-0'}`}
+    <div className="fixed inset-0 z-[10050] flex items-center justify-center px-4 py-6">
+      <div
+        className={`absolute inset-0 bg-black/30 backdrop-blur-md ${
+          isVisible ? 'modal-overlay-in' : enteredRef.current ? 'modal-overlay-out' : 'opacity-0'
+        }`}
         onClick={onCancel}
       />
-      
-      {/* 对话框 */}
-      <div className={`relative bg-[var(--bg-elevated)] rounded-xl shadow-2xl border border-[var(--border-default)] w-[420px] max-w-[90vw] overflow-hidden ${isVisible ? 'modal-content-in' : enteredRef.current ? 'modal-content-out' : 'opacity-0'}`}>
-        {/* 头部 */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-default)]">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-              isDanger ? 'bg-amber-500/15' : 'bg-emerald-500/15'
-            }`}>
-              <AlertTriangle className={`w-5 h-5 ${
-                isDanger ? 'text-amber-500' : 'text-emerald-500'
-              }`} />
-            </div>
-            <h3 className="text-base font-semibold text-[var(--fg-primary)]">
+
+      <div
+        className={`confirm-dialog glass-panel-strong ${
+          isVisible ? 'modal-content-in' : enteredRef.current ? 'modal-content-out' : 'opacity-0'
+        }`}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-dialog-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="confirm-dialog__header">
+          <div className="confirm-dialog__title-wrap">
+            <span
+              className={`confirm-dialog__icon ${isDanger ? 'confirm-dialog__icon--danger' : 'confirm-dialog__icon--safe'}`}
+              aria-hidden
+            >
+              <AlertTriangle className="h-[18px] w-[18px]" strokeWidth={1.75} />
+            </span>
+            <h3 id="confirm-dialog-title" className="confirm-dialog__title">
               {title}
             </h3>
           </div>
           <button
+            type="button"
             onClick={onCancel}
-            className="p-1.5 rounded-lg text-[var(--fg-muted)] hover:text-[var(--fg-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+            className="confirm-dialog__close btn-ghost"
+            aria-label="关闭确认弹窗"
           >
-            <X className="w-4 h-4" />
+            <X className="h-4 w-4" />
           </button>
-        </div>
+        </header>
 
-        {/* 内容 */}
-        <div className="px-5 py-4 space-y-4">
-          <p className="text-sm text-[var(--fg-secondary)] leading-relaxed">
-            {description}
-          </p>
-          
-          {warning && (
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
-              <p className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed break-words whitespace-pre-wrap">
-                {warning}
-              </p>
+        <div className="confirm-dialog__body">
+          <p className="confirm-dialog__description">{description}</p>
+
+          {notice && (
+            <div className="confirm-dialog__notice">
+              <p className="confirm-dialog__notice-label">{notice.label}</p>
+              <p className="confirm-dialog__notice-text">{notice.body}</p>
             </div>
           )}
         </div>
 
-        {/* 底部按钮 */}
-        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-[var(--border-default)] bg-[var(--bg-card)]">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-[var(--bg-hover)] transition-colors"
-          >
+        <footer className="confirm-dialog__footer">
+          <button type="button" onClick={onCancel} className="confirm-dialog__cancel">
             {cancelText}
           </button>
           <button
+            type="button"
             onClick={onConfirm}
-            className={`px-4 py-2 rounded-lg text-sm font-medium text-white transition-all ${
-              isDanger
-                ? 'bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-600 hover:to-red-600 shadow-lg shadow-rose-500/25'
-                : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-lg shadow-emerald-500/25'
-            }`}
+            className={`confirm-dialog__confirm ${isDanger ? 'confirm-dialog__confirm--danger' : 'btn-primary'}`}
           >
             {confirmText}
           </button>
-        </div>
+        </footer>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 });

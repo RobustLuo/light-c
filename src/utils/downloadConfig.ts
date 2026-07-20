@@ -1,6 +1,6 @@
 // ============================================================================
 // 官方下载渠道配置
-// 从 GitHub Release 的 download.json 动态读取网盘等渠道，避免把第三方下载链接固化进前端组件。
+// Fork 版统一指向 RobustLuo 仓库，避免继续读取原项目的 download.json。
 // ============================================================================
 
 export interface OfficialDownloadConfig {
@@ -10,12 +10,14 @@ export interface OfficialDownloadConfig {
   douyinUrl: string;
 }
 
-const DOWNLOAD_CONFIG_URL = 'https://github.com/Chunyu33/light-c/releases/latest/download/download.json';
+const GITHUB_REPO_URL = 'https://github.com/RobustLuo/light-c';
+const DOWNLOAD_CONFIG_URL = `${GITHUB_REPO_URL}/releases/latest/download/download.json`;
 
 const DEFAULT_DOWNLOAD_CONFIG: OfficialDownloadConfig = {
-  githubReleasesUrl: 'https://github.com/Chunyu33/light-c/releases',
-  bilibiliUrl: 'https://space.bilibili.com/387797235',
-  douyinUrl: 'https://www.douyin.com/search/Evan%E7%9A%84%E5%83%8F%E7%B4%A0%E7%A9%BA%E9%97%B4',
+  githubReleasesUrl: `${GITHUB_REPO_URL}/releases`,
+  // Fork 版默认只保留 GitHub 渠道，社交链接统一回落到作者主页。
+  bilibiliUrl: 'https://github.com/RobustLuo',
+  douyinUrl: 'https://github.com/RobustLuo',
 };
 
 let cachedConfigPromise: Promise<OfficialDownloadConfig> | null = null;
@@ -64,4 +66,3 @@ export async function getOfficialDownloadConfig(): Promise<OfficialDownloadConfi
 
   return cachedConfigPromise;
 }
-
