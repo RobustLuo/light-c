@@ -9,6 +9,8 @@ on:
   push:
     tags:
       - 'v*'
+  # fork 仓库首次需在 Settings → Actions 启用后再手动触发
+  workflow_dispatch:
 
 jobs:
   release:
