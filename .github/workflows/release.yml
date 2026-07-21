@@ -58,7 +58,8 @@ jobs:
 
           $cargoConfig = 'src-tauri/.cargo/config.toml'
           if (Test-Path $cargoConfig) {
-            Rename-Item $cargoConfig "$cargoConfig.ci-off"
+            # PowerShell 中 "$cargoConfig.ci-off" 会被误解析，必须用 ${cargoConfig}
+            Rename-Item $cargoConfig "${cargoConfig}.ci-off"
             Write-Host "Disabled local cargo config for CI"
           }
           Write-Host "CARGO_TARGET_DIR=$targetRoot"
