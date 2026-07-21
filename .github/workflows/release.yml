@@ -118,7 +118,8 @@ jobs:
           $password = $env:SIGNING_PASSWORD.Trim()
           $keyPathEnv = ($keyPath -replace '\\', '/')
           "TAURI_SIGNING_PRIVATE_KEY=$keyPathEnv" >> $env:GITHUB_ENV
-          "TAURI_PRIVATE_KEY=$keyPathEnv" >> $env:GITHUB_ENV
+          # signer CLI 读取 TAURI_PRIVATE_KEY_PATH；TAURI_PRIVATE_KEY 只能是密钥字符串，不能填路径
+          "TAURI_PRIVATE_KEY_PATH=$keyPathEnv" >> $env:GITHUB_ENV
           "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$password" >> $env:GITHUB_ENV
           "TAURI_PRIVATE_KEY_PASSWORD=$password" >> $env:GITHUB_ENV
           Write-Host "Signing key ready: $keyPathEnv"
@@ -141,6 +142,9 @@ jobs:
           $preservedRuntime = Join-Path $env:GITHUB_WORKSPACE 'LuoScope_installer_runtime.exe'
           Copy-Item -LiteralPath $runtimeExe -Destination $preservedRuntime -Force
           Write-Host "Preserved runtime exe: $runtimeExe"
+
+          # 与 tauri build 同一会话内签名，避免下一步 signer 环境变量不一致
+          Write-TauriExeSignatureAsset -ExecutablePath $preservedRuntime -OutputSigPath (Join-Path $env:GITHUB_WORKSPACE 'LuoScope_installer_exe.sig')
 
           $tag = $env:RELEASE_TAG
           $version = (Get-Content 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json).version
@@ -184,47 +188,17 @@ jobs:
         shell: pwsh
         run: |
           . ./scripts/ci-resolve-release-paths.ps1
-
-          $PreservedInstallerExe = Join-Path $env:GITHUB_WORKSPACE 'LuoScope_installer_runtime.exe'
-          $ReleaseExe = if (Test-Path -LiteralPath $PreservedInstallerExe) {
-            $PreservedInstallerExe
-          } else {
-            Get-LuoScopeReleaseExe
+          $sigPath = Join-Path $env:GITHUB_WORKSPACE 'LuoScope_installer_exe.sig'
+          if (Test-Path -LiteralPath $sigPath) {
+            Write-Host "Installer exe signature already created in build step" -ForegroundColor Green
+            exit 0
           }
 
-          if (-not $ReleaseExe -or -not (Test-Path -LiteralPath $ReleaseExe)) {
-            Write-Host "Error: normal installer runtime LuoScope.exe not found" -ForegroundColor Red
-            Write-Host "CiReleaseDir=$CiReleaseDir" -ForegroundColor Yellow
-            exit 1
+          $preservedRuntime = Join-Path $env:GITHUB_WORKSPACE 'LuoScope_installer_runtime.exe'
+          if (-not (Test-Path -LiteralPath $preservedRuntime)) {
+            throw 'LuoScope_installer_runtime.exe not found'
           }
-
-          # 必须在 WebView2 离线包二次构建前签名；后续 tauri build 会覆盖 target\release\LuoScope.exe。
-          if ($ReleaseExe -ne $PreservedInstallerExe) {
-            Copy-Item -LiteralPath $ReleaseExe -Destination $PreservedInstallerExe -Force
-          }
-          $SignatureOutput = npx tauri signer sign $ReleaseExe
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Error: installer exe signing failed" -ForegroundColor Red
-            exit $LASTEXITCODE
-          }
-          $GeneratedSigPath = "$ReleaseExe.sig"
-          if (Test-Path $GeneratedSigPath) {
-            $SignatureText = Get-Content -Raw -Path $GeneratedSigPath
-            if ($SignatureText.TrimStart().StartsWith("untrusted comment:")) {
-              $SignatureBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($SignatureText))
-            } else {
-              $SignatureBase64 = $SignatureText.Trim()
-            }
-          } else {
-            $SignatureBase64 = ($SignatureOutput -split "`r?`n" | Where-Object { $_ -match '^[A-Za-z0-9+/=]+$' } | Select-Object -Last 1)
-            if (-not $SignatureBase64) {
-              Write-Host "Error: installer exe signature output not found" -ForegroundColor Red
-              exit 1
-            }
-          }
-
-          $SignatureBase64 | Out-File -FilePath (Join-Path $env:GITHUB_WORKSPACE 'LuoScope_installer_exe.sig') -Encoding utf8 -NoNewline
-          Write-Host "  Created: LuoScope_installer_exe.sig" -ForegroundColor Green
+          Write-TauriExeSignatureAsset -ExecutablePath $preservedRuntime -OutputSigPath $sigPath
 
       # 以下额外打包 WebView2 离线安装包和绿色便携版并上传到同一个 Release
 
@@ -278,29 +252,7 @@ jobs:
             exit 1
           }
 
-          $SignatureOutput = npx tauri signer sign $OfflineRuntimeExe
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Error: WebView2 offline exe signing failed" -ForegroundColor Red
-            exit $LASTEXITCODE
-          }
-          $GeneratedSigPath = "$OfflineRuntimeExe.sig"
-          if (Test-Path $GeneratedSigPath) {
-            $SignatureText = Get-Content -Raw -Path $GeneratedSigPath
-            if ($SignatureText.TrimStart().StartsWith("untrusted comment:")) {
-              $SignatureBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($SignatureText))
-            } else {
-              $SignatureBase64 = $SignatureText.Trim()
-            }
-          } else {
-            $SignatureBase64 = ($SignatureOutput -split "`r?`n" | Where-Object { $_ -match '^[A-Za-z0-9+/=]+$' } | Select-Object -Last 1)
-            if (-not $SignatureBase64) {
-              Write-Host "Error: WebView2 offline exe signature output not found" -ForegroundColor Red
-              exit 1
-            }
-          }
-
-          $SignatureBase64 | Out-File -FilePath (Join-Path $env:GITHUB_WORKSPACE "LuoScope_webview2_offline_exe.sig") -Encoding utf8 -NoNewline
-          Write-Host "  Created: LuoScope_webview2_offline_exe.sig" -ForegroundColor Green
+          Write-TauriExeSignatureAsset -ExecutablePath $OfflineRuntimeExe -OutputSigPath (Join-Path $env:GITHUB_WORKSPACE 'LuoScope_webview2_offline_exe.sig')
           echo "webview2_offline_installer=$OutputName" >> $env:GITHUB_OUTPUT
         id: webview2_offline
 
@@ -373,31 +325,7 @@ jobs:
           Write-Host "  Created: $ZipName" -ForegroundColor Green
 
           # 签名对象必须是最终便携包内的 LuoScope.exe；manifest 不参与 exe 签名，避免改变现有校验链路。
-          $SignatureOutput = npx tauri signer sign "$PortableDir\LuoScope.exe"
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Error: portable exe signing failed" -ForegroundColor Red
-            exit $LASTEXITCODE
-          }
-          $GeneratedSigPath = "$PortableDir\LuoScope.exe.sig"
-          if (Test-Path $GeneratedSigPath) {
-            $SignatureText = Get-Content -Raw -Path $GeneratedSigPath
-            if ($SignatureText.TrimStart().StartsWith("untrusted comment:")) {
-              # 原始 minisign 文本需要转成 Tauri updater 风格的 Public signature 字符串。
-              $SignatureBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($SignatureText))
-            } else {
-              # 有些 CLI 版本会直接写入 Public signature，直接复用可避免双重 base64。
-              $SignatureBase64 = $SignatureText.Trim()
-            }
-          } else {
-            # CLI 正常会生成 .sig 文件；这里兜底解析 stdout 中的 Public signature，避免把说明文字写进签名资产。
-            $SignatureBase64 = ($SignatureOutput -split "`r?`n" | Where-Object { $_ -match '^[A-Za-z0-9+/=]+$' } | Select-Object -Last 1)
-            if (-not $SignatureBase64) {
-              Write-Host "Error: signature output not found" -ForegroundColor Red
-              exit 1
-            }
-          }
-          $SignatureBase64 | Out-File -FilePath (Join-Path $env:GITHUB_WORKSPACE 'LuoScope_portable_exe.sig') -Encoding utf8 -NoNewline
-          Write-Host "  Created: LuoScope_portable_exe.sig" -ForegroundColor Green
+          Write-TauriExeSignatureAsset -ExecutablePath (Join-Path $PortableDir 'LuoScope.exe') -OutputSigPath (Join-Path $env:GITHUB_WORKSPACE 'LuoScope_portable_exe.sig')
 
           # 清理临时目录
           Remove-Item $PortableDir -Recurse -Force

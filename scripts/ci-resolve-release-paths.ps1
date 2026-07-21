@@ -29,3 +29,57 @@ function Get-LuoScopeReleaseExe {
 
     return $null
 }
+
+function Convert-ToReleaseSignature {
+    param([string]$SignatureText)
+
+    $trimmed = $SignatureText.Trim()
+    if ($trimmed.StartsWith('untrusted comment:')) {
+        return [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($trimmed))
+    }
+    return $trimmed
+}
+
+function Write-TauriExeSignatureAsset {
+    param(
+        [Parameter(Mandatory = $true)][string]$ExecutablePath,
+        [Parameter(Mandatory = $true)][string]$OutputSigPath
+    )
+
+    if (-not (Test-Path -LiteralPath $ExecutablePath)) {
+        throw "Cannot find executable to sign: $ExecutablePath"
+    }
+
+    $keyPath = ($env:TAURI_PRIVATE_KEY_PATH -replace '/', '\')
+    if ([string]::IsNullOrWhiteSpace($keyPath)) {
+        $keyPath = ($env:TAURI_SIGNING_PRIVATE_KEY -replace '/', '\')
+    }
+    $password = $env:TAURI_PRIVATE_KEY_PASSWORD
+    if ([string]::IsNullOrWhiteSpace($password)) {
+        $password = $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+    }
+
+    $generatedSigPath = "$ExecutablePath.sig"
+    if (Test-Path -LiteralPath $generatedSigPath) {
+        Remove-Item -LiteralPath $generatedSigPath -Force
+    }
+
+    $signatureOutput = npx tauri signer sign -f $keyPath -p $password $ExecutablePath 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        throw "Executable signing failed: $ExecutablePath`n$signatureOutput"
+    }
+
+    if (Test-Path -LiteralPath $generatedSigPath) {
+        $signatureText = [IO.File]::ReadAllText($generatedSigPath, [Text.Encoding]::UTF8)
+        $signatureBase64 = Convert-ToReleaseSignature $signatureText
+    } else {
+        $signatureBase64 = ($signatureOutput -split "`r?`n" | Where-Object { $_ -match '^[A-Za-z0-9+/=]+$' } | Select-Object -Last 1)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($signatureBase64)) {
+        throw "Signature output not found for: $ExecutablePath"
+    }
+
+    $signatureBase64 | Out-File -FilePath $OutputSigPath -Encoding utf8 -NoNewline
+    Write-Host "Created signature asset: $OutputSigPath" -ForegroundColor Green
+}
