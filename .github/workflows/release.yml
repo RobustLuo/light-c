@@ -44,12 +44,46 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # GitHub Secret 存 Base64(整文件)；此处解码为临时私钥文件，避免 Tauri 把多行原文当 Base64 解析失败
+      - name: Prepare Tauri signing key
+        shell: pwsh
+        env:
+          SIGNING_KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_KEY_B64)) {
+            throw 'GitHub Secret TAURI_SIGNING_PRIVATE_KEY 未配置'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_PASSWORD)) {
+            throw 'GitHub Secret TAURI_SIGNING_PRIVATE_KEY_PASSWORD 未配置'
+          }
+
+          $keyPath = Join-Path $env:RUNNER_TEMP 'luoscope.key'
+          $raw = $env:SIGNING_KEY_B64.Trim()
+
+          try {
+            $bytes = [Convert]::FromBase64String($raw)
+            [IO.File]::WriteAllBytes($keyPath, $bytes)
+          } catch {
+            throw 'TAURI_SIGNING_PRIVATE_KEY 必须是 luoscope.key 整文件的 Base64 单行，不能粘贴 .key 多行原文'
+          }
+
+          $firstLine = (Get-Content $keyPath -TotalCount 1)
+          if ($firstLine -notmatch 'encrypted secret key') {
+            throw "解码后的私钥格式不对: $firstLine"
+          }
+
+          $password = $env:SIGNING_PASSWORD.Trim()
+          "TAURI_SIGNING_PRIVATE_KEY=$keyPath" >> $env:GITHUB_ENV
+          "TAURI_PRIVATE_KEY=$keyPath" >> $env:GITHUB_ENV
+          "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$password" >> $env:GITHUB_ENV
+          "TAURI_PRIVATE_KEY_PASSWORD=$password" >> $env:GITHUB_ENV
+          Write-Host "Signing key ready: $keyPath"
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'LuoScope v1.0.0'
@@ -68,11 +102,6 @@ jobs:
 
       - name: Create normal installer exe signature
         shell: pwsh
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           $ReleaseExe = "src-tauri\target\release\LuoScope.exe"
           $PreservedInstallerExe = "LuoScope_installer_runtime.exe"
@@ -113,11 +142,6 @@ jobs:
 
       - name: Create WebView2 offline installer
         shell: pwsh
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           $ConfigPath = "tauri.webview2-offline.conf.json"
           $OutputName = "LuoScope_webview2_offline_x64.exe"
@@ -191,11 +215,6 @@ jobs:
 
       - name: Create portable package
         shell: pwsh
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           $ReleaseDir = "src-tauri\target\release"
           $PortableDir = "portable_temp"

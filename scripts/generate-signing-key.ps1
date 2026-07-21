@@ -73,8 +73,8 @@ try {
     Write-Host '       $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''你的密码'''
     Write-Host '       .\pack.ps1'
     Write-Host '  2. GitHub 发版：在仓库 Secrets 配置'
-    Write-Host '       TAURI_SIGNING_PRIVATE_KEY = （luoscope.key 文件全文）'
-    Write-Host '       TAURI_SIGNING_PRIVATE_KEY_PASSWORD = （同上密码）'
+    Write-Host '       TAURI_SIGNING_PRIVATE_KEY = luoscope.key 文件内容的 Base64（单行，勿直接粘贴多行原文）'
+    Write-Host '       TAURI_SIGNING_PRIVATE_KEY_PASSWORD = （同上密码，勿带换行）'
     Write-Host ''
     Write-Host '注意：换密钥后，旧版已发布安装包的「官方 exe 校验」会失效，需重新发版。' -ForegroundColor Yellow
 }
