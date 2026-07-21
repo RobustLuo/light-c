@@ -22,6 +22,9 @@ jobs:
         platform: [windows-latest]
 
     runs-on: ${{ matrix.platform }}
+    env:
+      # 覆盖 src-tauri/.cargo/config.toml 的 D 盘 target-dir，CI 产物固定到 src-tauri/target
+      CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target
 
     steps:
       - name: Checkout repository
@@ -43,6 +46,19 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Resolve release tag
+        shell: pwsh
+        run: |
+          if ('${{ github.ref_type }}' -eq 'tag') {
+            $tag = '${{ github.ref_name }}'
+          } else {
+            # workflow_dispatch 从 main 触发时，用 tauri.conf.json 版本号作为 Release tag
+            $version = (Get-Content 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json).version
+            $tag = "v$version"
+          }
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+          Write-Host "Release tag: $tag"
 
       # luoscope.key 本身已是 Tauri 需要的 Base64 单行；Secret 直接粘贴该文件全文即可
       - name: Prepare Tauri signing key
@@ -86,7 +102,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
+          tagName: ${{ env.RELEASE_TAG }}
           releaseName: 'LuoScope v1.0.0'
           releaseBody: |
             ## LuoScope 首个公开发布
@@ -108,7 +124,8 @@ jobs:
           $PreservedInstallerExe = "LuoScope_installer_runtime.exe"
 
           if (-not (Test-Path $ReleaseExe)) {
-            Write-Host "Error: normal installer runtime LuoScope.exe not found" -ForegroundColor Red
+            Write-Host "Error: normal installer runtime LuoScope.exe not found at $ReleaseExe" -ForegroundColor Red
+            Write-Host "CARGO_TARGET_DIR=$env:CARGO_TARGET_DIR" -ForegroundColor Yellow
             exit 1
           }
 
@@ -321,7 +338,7 @@ jobs:
           $WebView2OfflineInstallerPath = "LuoScope_webview2_offline_x64.exe"
           if ((Test-Path $ZipPath) -and (Test-Path $InstallerSigPath) -and (Test-Path $WebView2OfflineSigPath) -and (Test-Path $PortableSigPath) -and (Test-Path $DownloadConfigPath) -and (Test-Path $WebView2OfflineInstallerPath)) {
             Write-Host "Uploading extra assets to release..." -ForegroundColor Cyan
-            gh release upload ${{ github.ref_name }} $ZipPath $InstallerSigPath $WebView2OfflineSigPath $PortableSigPath $DownloadConfigPath $WebView2OfflineInstallerPath --clobber
+            gh release upload ${{ env.RELEASE_TAG }} $ZipPath $InstallerSigPath $WebView2OfflineSigPath $PortableSigPath $DownloadConfigPath $WebView2OfflineInstallerPath --clobber
             Write-Host "Upload done!" -ForegroundColor Green
           } else {
             Write-Host "Error: portable zip, exe signatures, download config or WebView2 offline installer not found" -ForegroundColor Red
