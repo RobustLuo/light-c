@@ -1,6 +1,11 @@
 # ============================================================================
 # 开发/编译缓存统一到 D 盘，避免 C 盘被 Cursor 沙盒与 Cargo 占满
+# GitHub Actions 不启用：CI 使用 job 注入的 CARGO_TARGET_DIR（src-tauri/target）
 # ============================================================================
+
+if ($env:GITHUB_ACTIONS -eq 'true') {
+    return
+}
 
 $DevCacheRoot = "D:\DevCache\LuoScope"
 

@@ -47,6 +47,22 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # 本地 .cargo/config.toml 指向 D 盘，CI 临时禁用，避免产物写到 runner 的 D:\DevCache
+      - name: Configure CI cargo output paths
+        shell: pwsh
+        run: |
+          $targetRoot = Join-Path $env:GITHUB_WORKSPACE 'src-tauri/target'
+          "CARGO_TARGET_DIR=$targetRoot" >> $env:GITHUB_ENV
+          "CARGO_RELEASE_DIR=$targetRoot/release" >> $env:GITHUB_ENV
+          "CARGO_NSIS_DIR=$targetRoot/release/bundle/nsis" >> $env:GITHUB_ENV
+
+          $cargoConfig = 'src-tauri/.cargo/config.toml'
+          if (Test-Path $cargoConfig) {
+            Rename-Item $cargoConfig "$cargoConfig.ci-off"
+            Write-Host "Disabled local cargo config for CI"
+          }
+          Write-Host "CARGO_TARGET_DIR=$targetRoot"
+
       - name: Resolve release tag
         shell: pwsh
         run: |
@@ -108,10 +124,10 @@ jobs:
 
           $tag = $env:RELEASE_TAG
           $version = (Get-Content 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json).version
-          $nsisDir = 'src-tauri/target/release/bundle/nsis'
+          $nsisDir = $env:CARGO_NSIS_DIR
 
           if (-not (Test-Path $nsisDir)) {
-            throw "NSIS 安装包目录不存在: $nsisDir"
+            throw "NSIS 安装包目录不存在: $nsisDir (CARGO_TARGET_DIR=$env:CARGO_TARGET_DIR)"
           }
 
           $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.md'
@@ -137,7 +153,7 @@ jobs:
           }
           gh release upload $tag --clobber @($uploadFiles | ForEach-Object { $_.FullName })
 
-          $latestJson = Get-ChildItem 'src-tauri/target/release' -Filter 'latest.json' -ErrorAction SilentlyContinue | Select-Object -First 1
+          $latestJson = Get-ChildItem $env:CARGO_RELEASE_DIR -Filter 'latest.json' -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($latestJson) {
             gh release upload $tag --clobber $latestJson.FullName
           }
@@ -147,7 +163,7 @@ jobs:
       - name: Create normal installer exe signature
         shell: pwsh
         run: |
-          $ReleaseExe = "src-tauri\target\release\LuoScope.exe"
+          $ReleaseExe = Join-Path $env:CARGO_RELEASE_DIR 'LuoScope.exe'
           $PreservedInstallerExe = "LuoScope_installer_runtime.exe"
 
           if (-not (Test-Path $ReleaseExe)) {
@@ -214,7 +230,7 @@ jobs:
             exit $LASTEXITCODE
           }
 
-          $Installer = Get-ChildItem -Path "src-tauri\target\release\bundle\nsis" -Filter "*.exe" |
+          $Installer = Get-ChildItem -Path $env:CARGO_NSIS_DIR -Filter "*.exe" |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
           if (-not $Installer) {
@@ -225,7 +241,7 @@ jobs:
           Copy-Item $Installer.FullName $OutputName -Force
           Write-Host "  Created: $OutputName" -ForegroundColor Green
 
-          $OfflineRuntimeExe = "src-tauri\target\release\LuoScope.exe"
+          $OfflineRuntimeExe = Join-Path $env:CARGO_RELEASE_DIR 'LuoScope.exe'
           if (-not (Test-Path $OfflineRuntimeExe)) {
             Write-Host "Error: WebView2 offline runtime LuoScope.exe not found" -ForegroundColor Red
             exit 1
@@ -260,7 +276,7 @@ jobs:
       - name: Create portable package
         shell: pwsh
         run: |
-          $ReleaseDir = "src-tauri\target\release"
+          $ReleaseDir = $env:CARGO_RELEASE_DIR
           $PortableDir = "portable_temp"
           $ZipName = "LuoScope_portable_x64.zip"
           $PreservedInstallerExe = "LuoScope_installer_runtime.exe"
