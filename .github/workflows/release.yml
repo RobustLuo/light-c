@@ -47,6 +47,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # 安装向导侧边栏/顶栏位图需与 icon-source.png 同步，避免 CI 仍打包旧版 C: 占位图
+      - name: Generate NSIS installer assets
+        run: npm run gen-nsis-assets
+
       # 本地 .cargo/config.toml 指向 D 盘，CI 临时禁用，避免产物写到 runner 的 D:\DevCache
       - name: Configure CI cargo output paths
         shell: pwsh

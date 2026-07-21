@@ -18,6 +18,7 @@ const __dirname = path.dirname(__filename);
 
 const iconsDir = path.join(__dirname, '../src-tauri/icons');
 const nsisDir = path.join(__dirname, '../src-tauri/nsis');
+const pngSourcePath = path.join(iconsDir, 'icon-source.png');
 const svgPath = path.join(iconsDir, 'icon.svg');
 
 // 确保 nsis 目录存在
@@ -85,6 +86,33 @@ function rgbToBmp(rawBuffer, width, height) {
 }
 
 /**
+ * 读取安装向导 Logo：优先与 exe 一致的 icon-source.png，避免侧边栏仍显示旧版 C: 占位图。
+ */
+async function loadLogoBuffer(size) {
+  if (fs.existsSync(pngSourcePath)) {
+    return sharp(pngSourcePath)
+      .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+  }
+
+  if (fs.existsSync(svgPath)) {
+    return sharp(fs.readFileSync(svgPath))
+      .resize(size, size)
+      .png()
+      .toBuffer();
+  }
+
+  const fallbackSvg = `
+    <svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="${size}" height="${size}" rx="20" fill="#07C160"/>
+      <text x="50%" y="60%" font-family="Arial" font-size="48" font-weight="bold" fill="white" text-anchor="middle">C:</text>
+    </svg>
+  `;
+  return sharp(Buffer.from(fallbackSvg)).png().toBuffer();
+}
+
+/**
  * 生成 wizard.bmp (164x314)
  * 左侧向导图片，翡翠绿到深色的垂直渐变背景，Logo 居中在上半部分
  */
@@ -112,26 +140,7 @@ async function generateWizardBmp() {
     .png()
     .toBuffer();
 
-  // 读取并调整 Logo 尺寸
-  let logoBuffer;
-  if (fs.existsSync(svgPath)) {
-    const svgContent = fs.readFileSync(svgPath);
-    logoBuffer = await sharp(svgContent)
-      .resize(logoSize, logoSize)
-      .png()
-      .toBuffer();
-  } else {
-    // 如果没有 SVG，创建一个简单的 "C:" 文字 Logo
-    const fallbackSvg = `
-      <svg width="${logoSize}" height="${logoSize}" xmlns="http://www.w3.org/2000/svg">
-        <rect width="${logoSize}" height="${logoSize}" rx="20" fill="#07C160"/>
-        <text x="50%" y="60%" font-family="Arial" font-size="48" font-weight="bold" fill="white" text-anchor="middle">C:</text>
-      </svg>
-    `;
-    logoBuffer = await sharp(Buffer.from(fallbackSvg))
-      .png()
-      .toBuffer();
-  }
+  const logoBuffer = await loadLogoBuffer(logoSize);
 
   // 合成：背景 + Logo
   const logoX = Math.floor((width - logoSize) / 2);
@@ -176,26 +185,7 @@ async function generateHeaderBmp() {
     .png()
     .toBuffer();
 
-  // 读取并调整 Logo 尺寸
-  let logoBuffer;
-  if (fs.existsSync(svgPath)) {
-    const svgContent = fs.readFileSync(svgPath);
-    logoBuffer = await sharp(svgContent)
-      .resize(logoSize, logoSize)
-      .png()
-      .toBuffer();
-  } else {
-    // 如果没有 SVG，创建一个简单的 Logo
-    const fallbackSvg = `
-      <svg width="${logoSize}" height="${logoSize}" xmlns="http://www.w3.org/2000/svg">
-        <rect width="${logoSize}" height="${logoSize}" rx="8" fill="#07C160"/>
-        <text x="50%" y="65%" font-family="Arial" font-size="20" font-weight="bold" fill="white" text-anchor="middle">C:</text>
-      </svg>
-    `;
-    logoBuffer = await sharp(Buffer.from(fallbackSvg))
-      .png()
-      .toBuffer();
-  }
+  const logoBuffer = await loadLogoBuffer(logoSize);
 
   // Logo 放在右侧，垂直居中
   const logoX = width - logoSize - 8;
