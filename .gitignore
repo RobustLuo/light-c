@@ -30,6 +30,7 @@ dist-ssr
 .tauri/update.key
 .tauri/*.key
 .tauri/signing-password.local.txt
+.tauri/github-secrets-paste.local.txt
 build.sh
 build.ps1
 
