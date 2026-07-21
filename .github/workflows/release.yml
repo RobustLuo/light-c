@@ -56,17 +56,21 @@ jobs:
         shell: pwsh
         run: |
           $targetRoot = Join-Path $env:GITHUB_WORKSPACE 'src-tauri/target'
-          "CARGO_TARGET_DIR=$targetRoot" >> $env:GITHUB_ENV
-          "CARGO_RELEASE_DIR=$targetRoot/release" >> $env:GITHUB_ENV
-          "CARGO_NSIS_DIR=$targetRoot/release/bundle/nsis" >> $env:GITHUB_ENV
+          # GITHUB_ENV 会把 \t \r 等当作转义符，Windows 路径必须改成正斜杠
+          $targetRootEnv = ($targetRoot -replace '\\', '/')
 
-          $cargoConfig = 'src-tauri/.cargo/config.toml'
+          "CARGO_TARGET_DIR=$targetRootEnv" >> $env:GITHUB_ENV
+          "CARGO_RELEASE_DIR=$targetRootEnv/release" >> $env:GITHUB_ENV
+          "CARGO_NSIS_DIR=$targetRootEnv/release/bundle/nsis" >> $env:GITHUB_ENV
+
+          $cargoConfig = Join-Path $env:GITHUB_WORKSPACE 'src-tauri/.cargo/config.toml'
+          $disabledConfig = "${cargoConfig}.ci-off"
           if (Test-Path $cargoConfig) {
-            # PowerShell 中 "$cargoConfig.ci-off" 会被误解析，必须用 ${cargoConfig}
-            Rename-Item $cargoConfig "${cargoConfig}.ci-off"
+            if (Test-Path $disabledConfig) { Remove-Item $disabledConfig -Force }
+            Rename-Item -LiteralPath $cargoConfig -NewName (Split-Path $disabledConfig -Leaf)
             Write-Host "Disabled local cargo config for CI"
           }
-          Write-Host "CARGO_TARGET_DIR=$targetRoot"
+          Write-Host "CARGO_TARGET_DIR=$targetRootEnv"
 
       - name: Resolve release tag
         shell: pwsh
@@ -112,11 +116,12 @@ jobs:
           }
 
           $password = $env:SIGNING_PASSWORD.Trim()
-          "TAURI_SIGNING_PRIVATE_KEY=$keyPath" >> $env:GITHUB_ENV
-          "TAURI_PRIVATE_KEY=$keyPath" >> $env:GITHUB_ENV
+          $keyPathEnv = ($keyPath -replace '\\', '/')
+          "TAURI_SIGNING_PRIVATE_KEY=$keyPathEnv" >> $env:GITHUB_ENV
+          "TAURI_PRIVATE_KEY=$keyPathEnv" >> $env:GITHUB_ENV
           "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$password" >> $env:GITHUB_ENV
           "TAURI_PRIVATE_KEY_PASSWORD=$password" >> $env:GITHUB_ENV
-          Write-Host "Signing key ready: $keyPath"
+          Write-Host "Signing key ready: $keyPathEnv"
 
       - name: Build the app and create GitHub Release
         shell: pwsh
