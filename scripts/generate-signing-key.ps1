@@ -62,6 +62,23 @@ try {
     )
     [IO.File]::WriteAllText($TauriConfigPath, $updatedConfig, (New-Object System.Text.UTF8Encoding $false))
 
+    $privateKeyForSecret = ([IO.File]::ReadAllText($PrivateKeyPath, [Text.Encoding]::UTF8)).Trim()
+    $pastePath = Join-Path $ProjectRoot '.tauri\github-secrets-paste.local.txt'
+    @"
+=== GitHub Secrets（复制到仓库 Settings → Secrets → Actions）===
+https://github.com/RobustLuo/light-c/settings/secrets/actions
+
+1) Name: TAURI_SIGNING_PRIVATE_KEY
+Value（整行复制 luoscope.key 原文，以 dW50 开头，不要二次 Base64）:
+$privateKeyForSecret
+
+2) Name: TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+Value:
+$plainPassword
+
+保存后 Run workflow: https://github.com/RobustLuo/light-c/actions/workflows/release.yml
+"@ | Out-File -FilePath $pastePath -Encoding utf8
+
     Write-Host ''
     Write-Host '=== 完成 ===' -ForegroundColor Green
     Write-Host '  私钥: .tauri\luoscope.key'
@@ -73,8 +90,9 @@ try {
     Write-Host '       $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''你的密码'''
     Write-Host '       .\pack.ps1'
     Write-Host '  2. GitHub 发版：在仓库 Secrets 配置'
-    Write-Host '       TAURI_SIGNING_PRIVATE_KEY = luoscope.key 文件内容的 Base64（单行，勿直接粘贴多行原文）'
+    Write-Host '       TAURI_SIGNING_PRIVATE_KEY = 直接粘贴 .tauri\luoscope.key 全文（单行，勿二次 Base64）'
     Write-Host '       TAURI_SIGNING_PRIVATE_KEY_PASSWORD = （同上密码，勿带换行）'
+    Write-Host '       可复制 .tauri\github-secrets-paste.local.txt 里的内容'
     Write-Host ''
     Write-Host '注意：换密钥后，旧版已发布安装包的「官方 exe 校验」会失效，需重新发版。' -ForegroundColor Yellow
 }

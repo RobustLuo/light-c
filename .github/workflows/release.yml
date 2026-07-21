@@ -44,14 +44,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      # GitHub Secret 存 Base64(整文件)；此处解码为临时私钥文件，避免 Tauri 把多行原文当 Base64 解析失败
+      # luoscope.key 本身已是 Tauri 需要的 Base64 单行；Secret 直接粘贴该文件全文即可
       - name: Prepare Tauri signing key
         shell: pwsh
         env:
-          SIGNING_KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           SIGNING_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:SIGNING_KEY_B64)) {
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_KEY)) {
             throw 'GitHub Secret TAURI_SIGNING_PRIVATE_KEY 未配置'
           }
           if ([string]::IsNullOrWhiteSpace($env:SIGNING_PASSWORD)) {
@@ -59,18 +59,19 @@ jobs:
           }
 
           $keyPath = Join-Path $env:RUNNER_TEMP 'luoscope.key'
-          $raw = $env:SIGNING_KEY_B64.Trim()
+          $raw = ($env:SIGNING_KEY -replace '\s', '').Trim()
+
+          # 写入临时文件，供 tauri build / tauri signer 按路径读取
+          [IO.File]::WriteAllText($keyPath, $raw, (New-Object System.Text.UTF8Encoding $false))
 
           try {
-            $bytes = [Convert]::FromBase64String($raw)
-            [IO.File]::WriteAllBytes($keyPath, $bytes)
+            $inner = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($raw))
           } catch {
-            throw 'TAURI_SIGNING_PRIVATE_KEY 必须是 luoscope.key 整文件的 Base64 单行，不能粘贴 .key 多行原文'
+            throw 'TAURI_SIGNING_PRIVATE_KEY 无效：请直接粘贴 .tauri/luoscope.key 全文（单行，通常以 dW50 开头）'
           }
 
-          $firstLine = (Get-Content $keyPath -TotalCount 1)
-          if ($firstLine -notmatch 'encrypted secret key') {
-            throw "解码后的私钥格式不对: $firstLine"
+          if ($inner -notmatch 'encrypted secret key') {
+            throw 'TAURI_SIGNING_PRIVATE_KEY 格式不对：不要对 luoscope.key 再做二次 Base64，只粘贴文件原文一行'
           }
 
           $password = $env:SIGNING_PASSWORD.Trim()
