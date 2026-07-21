@@ -97,25 +97,52 @@ jobs:
           "TAURI_PRIVATE_KEY_PASSWORD=$password" >> $env:GITHUB_ENV
           Write-Host "Signing key ready: $keyPath"
 
-      - name: Build the app
-        uses: tauri-apps/tauri-action@v0
+      - name: Build the app and create GitHub Release
+        shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ env.RELEASE_TAG }}
-          releaseName: 'LuoScope v1.0.0'
-          releaseBody: |
-            ## LuoScope 首个公开发布
+        run: |
+          # 不用 tauri-action：其按 package.json.name(luo-scope) 找产物，与 productName(LuoScope) 不一致会报 No artifacts were found
+          npm run tauri build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-            - **全功能免费**：12 个清理/分析模块与分栏布局均免费开放
-            - **官方下载渠道**：GitHub Releases + 微信公众号「LuoScope」
-            - **垃圾软件清理**、**分栏布局**、**磁盘变化分析**、**品牌 LuoScope**（兼容旧版 LightC 数据迁移）
-            - **Aurora UI**、模块扫描态统一、启动屏与设置页体验优化
+          $tag = $env:RELEASE_TAG
+          $version = (Get-Content 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json).version
+          $nsisDir = 'src-tauri/target/release/bundle/nsis'
 
-            完整变更见 [CHANGELOG.md](https://github.com/RobustLuo/light-c/blob/main/CHANGELOG.md)。
-          releaseDraft: false
-          prerelease: false
-          includeUpdaterJson: true
+          if (-not (Test-Path $nsisDir)) {
+            throw "NSIS 安装包目录不存在: $nsisDir"
+          }
+
+          $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          @"
+          ## LuoScope 首个公开发布
+
+          - **全功能免费**：12 个清理/分析模块与分栏布局均免费开放
+          - **官方下载渠道**：GitHub Releases + 微信公众号「LuoScope」
+          - **垃圾软件清理**、**分栏布局**、**磁盘变化分析**、**品牌 LuoScope**（兼容旧版 LightC 数据迁移）
+          - **Aurora UI**、模块扫描态统一、启动屏与设置页体验优化
+
+          完整变更见 [CHANGELOG.md](https://github.com/RobustLuo/light-c/blob/main/CHANGELOG.md)。
+          "@ | Out-File -FilePath $notesPath -Encoding utf8
+
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title "LuoScope v$version" --notes-file $notesPath
+          }
+
+          $uploadFiles = @(Get-ChildItem -Path $nsisDir -File | Where-Object { $_.Extension -in '.exe', '.sig', '.zip' })
+          if ($uploadFiles.Count -eq 0) {
+            throw '未找到可上传的 NSIS 安装包'
+          }
+          gh release upload $tag --clobber @($uploadFiles | ForEach-Object { $_.FullName })
+
+          $latestJson = Get-ChildItem 'src-tauri/target/release' -Filter 'latest.json' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($latestJson) {
+            gh release upload $tag --clobber $latestJson.FullName
+          }
+
+          Write-Host "Release $tag published with $($uploadFiles.Count) NSIS artifact(s)" -ForegroundColor Green
 
       - name: Create normal installer exe signature
         shell: pwsh
@@ -155,7 +182,6 @@ jobs:
           $SignatureBase64 | Out-File -FilePath "LuoScope_installer_exe.sig" -Encoding utf8 -NoNewline
           Write-Host "  Created: LuoScope_installer_exe.sig" -ForegroundColor Green
 
-      # tauri-action 已创建 Release 并上传了 NSIS 安装包
       # 以下额外打包 WebView2 离线安装包和绿色便携版并上传到同一个 Release
 
       - name: Create WebView2 offline installer
